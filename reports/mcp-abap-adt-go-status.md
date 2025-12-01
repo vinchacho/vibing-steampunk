@@ -10,8 +10,8 @@
 
 | Metric | Value |
 |--------|-------|
-| Total Tools Implemented | 25 |
-| Phase | 3 (CRUD + Class Includes) |
+| Total Tools Implemented | 36 |
+| Phase | 4 (Code Intelligence) |
 | Test Coverage | Unit + Integration |
 | Build Status | Passing |
 
@@ -73,12 +73,13 @@
 | Syntax Check | Y | Y | N | **Y** | `SyntaxCheck` tool |
 | Activate Object | Y | Y | N | **Y** | `Activate` tool |
 | Run Unit Tests | Y | Y | N | **Y** | `RunUnitTests` tool |
-| Pretty Printer | Y | Y | N | N | |
-| Code Completion | Y | Y | N | N | |
-| Find Definition | Y | Y | N | N | Future |
-| Find References | Y | Y | N | N | Future |
+| Pretty Printer | Y | Y | N | **Y** | `PrettyPrint` tool (Phase 4) |
+| Code Completion | Y | Y | N | **Y** | `CodeCompletion` tool (Phase 4) |
+| Find Definition | Y | Y | N | **Y** | `FindDefinition` tool (Phase 4) |
+| Find References | Y | Y | N | **Y** | `FindReferences` tool (Phase 4) |
+| Type Hierarchy | Y | Y | N | **Y** | `GetTypeHierarchy` tool (Phase 4) |
 
-**Coverage: 3/7 (43%)**
+**Coverage: 8/8 (100%)**
 
 ---
 
@@ -114,7 +115,20 @@
 
 ---
 
-## 6. Transport Management
+## 6. Workflow Tools (High-Level Operations)
+
+| Capability | ADT Native | abap-adt-api (TS) | mcp-abap-adt (TS) | **mcp-abap-adt-go** | Notes |
+|------------|------------|-------------------|-------------------|---------------------|-------|
+| Write Program | - | - | N | **Y** | `WriteProgram` (Lock -> Check -> Update -> Unlock -> Activate) |
+| Write Class | - | - | N | **Y** | `WriteClass` (Lock -> Check -> Update -> Unlock -> Activate) |
+| Create & Activate Program | - | - | N | **Y** | `CreateAndActivateProgram` full workflow |
+| Create Class with Tests | - | - | N | **Y** | `CreateClassWithTests` with unit test execution |
+
+**Coverage: 4/4 (100%)**
+
+---
+
+## 7. Transport Management
 
 | Capability | ADT Native | abap-adt-api (TS) | mcp-abap-adt (TS) | **mcp-abap-adt-go** | Notes |
 |------------|------------|-------------------|-------------------|---------------------|-------|
@@ -127,7 +141,7 @@
 
 ---
 
-## 7. Code Quality (ATC)
+## 8. Code Quality (ATC)
 
 | Capability | ADT Native | abap-adt-api (TS) | mcp-abap-adt (TS) | **mcp-abap-adt-go** | Notes |
 |------------|------------|-------------------|-------------------|---------------------|-------|
@@ -139,16 +153,17 @@
 
 ---
 
-## 8. Session & Authentication
+## 9. Session & Authentication
 
 | Capability | ADT Native | abap-adt-api (TS) | mcp-abap-adt (TS) | **mcp-abap-adt-go** | Notes |
 |------------|------------|-------------------|-------------------|---------------------|-------|
 | Login (Basic Auth) | Y | Y | Y | **Y** | Built into transport |
 | CSRF Token | Y | Y | Y | **Y** | Auto-managed |
 | Session Cookies | Y | Y | Y | **Y** | Auto-managed |
+| Stateful Sessions | Y | Y | N | **Y** | Required for CRUD operations |
 | Logout | Y | Y | N | N | |
 
-**Coverage: 3/4 (75%)**
+**Coverage: 4/5 (80%)**
 
 ---
 
@@ -158,19 +173,22 @@
 |----------|-------------|-------|----------|
 | Source Read | 9 | 14 | 64% |
 | Data Query | 3 | 4 | 75% |
-| Dev Tools | 3 | 7 | 43% |
+| **Dev Tools** | **8** | **8** | **100%** |
 | Navigation | 3 | 5 | 60% |
-| **CRUD (Write)** | **8** | **9** | **89%** |
+| CRUD (Write) | 8 | 9 | 89% |
+| **Workflow Tools** | **4** | **4** | **100%** |
 | Transports | 0 | 4 | 0% (parked) |
 | ATC | 0 | 3 | 0% |
-| Auth/Session | 3 | 4 | 75% |
-| **TOTAL** | **29** | **50** | **58%** |
+| Auth/Session | 4 | 5 | 80% |
+| **TOTAL** | **39** | **56** | **70%** |
 
 ---
 
 ## MCP Tools List
 
-### Currently Available (25 tools)
+### Currently Available (36 tools)
+
+#### Read Operations (14 tools)
 
 | Tool | Description | Status |
 |------|-------------|--------|
@@ -188,26 +206,53 @@
 | `GetPackage` | Get package contents | Tested |
 | `GetTransaction` | Get transaction details | Tested |
 | `GetTypeInfo` | Get data element info | Tested |
+
+#### Development Tools (3 tools)
+
+| Tool | Description | Status |
+|------|-------------|--------|
 | `SyntaxCheck` | Check ABAP syntax | Tested |
 | `Activate` | Activate ABAP object | Tested |
 | `RunUnitTests` | Run ABAP Unit tests | Tested |
+
+#### CRUD Operations (5 tools)
+
+| Tool | Description | Status |
+|------|-------------|--------|
 | `LockObject` | Acquire edit lock | Tested |
 | `UnlockObject` | Release edit lock | Tested |
 | `UpdateSource` | Write source code | Tested |
 | `CreateObject` | Create new objects (program, class, interface, etc.) | Tested |
 | `DeleteObject` | Delete ABAP object | Tested |
+
+#### Class Include Operations (3 tools)
+
+| Tool | Description | Status |
+|------|-------------|--------|
 | `GetClassInclude` | Get class include source (definitions, implementations, testclasses) | Tested |
 | `CreateTestInclude` | Create test classes include for a class | Tested |
 | `UpdateClassInclude` | Update class include source | Tested |
 
-### Next Phase - Code Intelligence
+#### Workflow Tools (4 tools)
 
-| Tool | Description | Priority |
-|------|-------------|----------|
-| `FindDefinition` | Navigate to definition | High |
-| `FindReferences` | Find all references | High |
-| `CodeCompletion` | Code completion suggestions | Medium |
-| `PrettyPrinter` | Format ABAP code | Medium |
+| Tool | Description | Status |
+|------|-------------|--------|
+| `WriteProgram` | Update program with syntax check and activation | Tested |
+| `WriteClass` | Update class with syntax check and activation | Tested |
+| `CreateAndActivateProgram` | Create new program with source and activate | Tested |
+| `CreateClassWithTests` | Create class with unit tests and run them | Tested |
+
+#### Code Intelligence Tools (7 tools) - **NEW in Phase 4**
+
+| Tool | Description | Status |
+|------|-------------|--------|
+| `FindDefinition` | Navigate to symbol definition | Tested |
+| `FindReferences` | Find all references to object/symbol | Tested |
+| `CodeCompletion` | Get code completion suggestions | Tested |
+| `PrettyPrint` | Format ABAP source code | Tested |
+| `GetPrettyPrinterSettings` | Get formatter settings | Tested |
+| `SetPrettyPrinterSettings` | Update formatter settings | Tested |
+| `GetTypeHierarchy` | Get type hierarchy (supertypes/subtypes) | Tested |
 
 ---
 
@@ -218,17 +263,20 @@ mcp-abap-adt-go/
 ├── cmd/mcp-abap-adt-go/
 │   └── main.go                 # Entry point
 ├── internal/mcp/
-│   └── server.go               # MCP server + handlers (25 tools)
+│   └── server.go               # MCP server + handlers (36 tools)
 └── pkg/adt/
     ├── client.go               # ADT client (read ops)
+    ├── sources.go              # Source retrieval operations
     ├── crud.go                 # CRUD ops (lock, unlock, create, update, delete, class includes)
     ├── devtools.go             # Dev tools (syntax, activate, unit tests)
-    ├── http.go                 # HTTP transport + CSRF
+    ├── codeintel.go            # Code intelligence (definition, references, completion, formatter)
+    ├── workflows.go            # High-level workflow operations
+    ├── http.go                 # HTTP transport + CSRF + stateful sessions
     ├── config.go               # Configuration
     ├── xml.go                  # XML types
     ├── client_test.go          # Unit tests
     ├── http_test.go            # Transport tests
-    └── integration_test.go     # Integration tests
+    └── integration_test.go     # Integration tests (24 tests)
 ```
 
 ---
@@ -241,35 +289,36 @@ ok  	github.com/vibingsteamer/mcp-abap-adt-go/internal/mcp	0.010s
 ok  	github.com/vibingsteamer/mcp-abap-adt-go/pkg/adt	    0.013s
 
 $ go test -tags=integration ./pkg/adt/
-PASS (14 integration tests against real SAP system)
+PASS (24 integration tests against real SAP system)
 
 Integration tests include:
-- SearchObject, GetProgram, GetClass, GetTable, GetTableContents
-- RunQuery, GetPackage, SyntaxCheck, RunUnitTests
-- CRUD_FullWorkflow (Create -> Lock -> Update -> Unlock -> Activate -> Delete)
-- LockUnlock cycle
-- ClassWithUnitTests (Create class -> Lock -> Update -> Create test include -> Write tests -> Unlock -> Activate -> Run tests)
+- Read operations: SearchObject, GetProgram, GetClass, GetTable, GetTableContents
+- Queries: RunQuery, GetPackage
+- Dev tools: SyntaxCheck, RunUnitTests
+- CRUD workflow: Create -> Lock -> Update -> Unlock -> Activate -> Delete
+- Class with tests: Create class -> Lock -> Update -> Create test include -> Write tests -> Unlock -> Activate -> Run tests
+- Workflow tools: WriteProgram, WriteClass, CreateAndActivateProgram, CreateClassWithTests
+- Code intelligence: PrettyPrint, GetPrettyPrinterSettings, CodeCompletion, FindDefinition, GetTypeHierarchy
 ```
 
 ---
 
 ## Next Steps
 
-1. **Phase 4: Code Intelligence**
-   - Find definition
-   - Find references
-   - Code completion
-   - Pretty printer
-
-2. **Phase 5: ATC Integration**
+1. **Phase 5: ATC Integration**
    - Create ATC runs
    - Get worklist
    - Apply fixes
 
-3. **Phase 6: Transport Management (if needed)**
+2. **Phase 6: Transport Management (if needed)**
    - Transport info
    - Create transport
    - Release transport
+
+3. **Future Enhancements**
+   - CDS View support
+   - RAP/BDEF support
+   - Debugger integration
 
 ---
 
@@ -277,13 +326,15 @@ Integration tests include:
 
 | Aspect | mcp-abap-adt (TS) | mcp-abap-adt-go |
 |--------|-------------------|-----------------|
-| Tools | 13 | 25 |
+| Tools | 13 | 36 |
 | SQL Query | No | Yes |
 | Syntax Check | No | Yes |
 | Unit Tests | No | Yes |
 | Activation | No | Yes |
 | CRUD (Lock/Unlock/Update/Create/Delete) | No | Yes |
 | Class Includes (Test Classes) | No | Yes |
+| Workflow Tools | No | Yes |
+| **Code Intelligence** | No | **Yes** |
 | Distribution | npm + Node.js | Single binary |
 | Startup | ~500ms | ~10ms |
 
