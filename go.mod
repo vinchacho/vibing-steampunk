@@ -1,4 +1,4 @@
-module github.com/vibingsteamer/mcp-abap-adt-go
+module github.com/oisee/vibing-steamer
 
 go 1.23
 

@@ -1,4 +1,4 @@
-# mcp-abap-adt-go Architecture
+# mcp-adt-go Architecture
 
 This document describes the architecture of the Go-native MCP server for SAP ADT.
 
@@ -73,8 +73,8 @@ This document describes the architecture of the Go-native MCP server for SAP ADT
 ## Directory Structure
 
 ```
-mcp-abap-adt-go/
-├── cmd/mcp-abap-adt-go/
+mcp-adt-go/
+├── cmd/mcp-adt-go/
 │   └── main.go                  # Entry point, config loading, server start
 │
 ├── internal/mcp/
@@ -97,7 +97,7 @@ mcp-abap-adt-go/
 │   └── integration_test.go      # Integration tests (requires SAP system)
 │
 ├── reports/                     # Project documentation
-│   ├── mcp-abap-adt-go-status.md    # Implementation status
+│   ├── mcp-adt-go-status.md         # Implementation status
 │   └── *.md                     # Discovery and analysis documents
 │
 ├── testdata/                    # Test fixtures
@@ -107,7 +107,7 @@ mcp-abap-adt-go/
 
 ## Component Details
 
-### cmd/mcp-abap-adt-go/main.go
+### cmd/mcp-adt-go/main.go
 
 Entry point for the MCP server:
 - Loads configuration from environment variables

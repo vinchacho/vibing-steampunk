@@ -4,7 +4,7 @@ This file provides context for AI assistants (Claude, etc.) working on this proj
 
 ## Project Overview
 
-**mcp-abap-adt-go** is a Go-native MCP (Model Context Protocol) server for SAP ABAP Development Tools (ADT). It provides a single-binary distribution of 36 ADT tools for use with Claude and other MCP-compatible LLMs.
+**mcp-adt-go** is a Go-native MCP (Model Context Protocol) server for SAP ABAP Development Tools (ADT). It provides a single-binary distribution of 36 ADT tools for use with Claude and other MCP-compatible LLMs.
 
 ## Quick Reference
 
@@ -12,7 +12,7 @@ This file provides context for AI assistants (Claude, etc.) working on this proj
 
 ```bash
 # Build
-go build -o mcp-abap-adt-go ./cmd/mcp-abap-adt-go
+go build -o mcp-adt-go ./cmd/mcp-adt-go
 
 # Run unit tests
 go test ./...
@@ -36,8 +36,8 @@ SAP_URL=http://host:port SAP_USER=user SAP_PASSWORD=pass SAP_CLIENT=001 \
 ## Codebase Structure
 
 ```
-cmd/mcp-abap-adt-go/main.go  # Entry point
-internal/mcp/server.go        # MCP server (36 tool handlers)
+cmd/mcp-adt-go/main.go       # Entry point
+internal/mcp/server.go       # MCP server (36 tool handlers)
 pkg/adt/
 ├── client.go                 # ADT client + read operations
 ├── crud.go                   # CRUD operations (lock, create, update, delete)
@@ -71,7 +71,7 @@ pkg/adt/
 3. **Add integration test** in `pkg/adt/integration_test.go`
 4. **Update documentation**:
    - `README.md` tool tables
-   - `reports/mcp-abap-adt-go-status.md`
+   - `reports/mcp-adt-go-status.md`
 
 ## Code Patterns
 
@@ -129,7 +129,7 @@ The SAP ADT REST API documentation can be found at:
 
 ## Project Status
 
-See `reports/mcp-abap-adt-go-status.md` for current implementation status.
+See `reports/mcp-adt-go-status.md` for current implementation status.
 
 **Current Phase**: 4 (Code Intelligence)
 **Total Tools**: 36

@@ -1,11 +1,11 @@
-// mcp-abap-adt-go is an MCP server providing ABAP Development Tools (ADT) functionality.
+// mcp-adt-go is an MCP server providing ABAP Development Tools (ADT) functionality.
 package main
 
 import (
 	"fmt"
 	"os"
 
-	"github.com/vibingsteamer/mcp-abap-adt-go/internal/mcp"
+	"github.com/oisee/vibing-steamer/internal/mcp"
 )
 
 func main() {

@@ -1,7 +1,7 @@
-# mcp-abap-adt-go Makefile
+# mcp-adt-go Makefile
 
 # Binary name
-BINARY_NAME=mcp-abap-adt-go
+BINARY_NAME=mcp-adt-go
 
 # Go parameters
 GOCMD=go
@@ -15,7 +15,7 @@ GOLINT=golangci-lint
 
 # Build directories
 BUILD_DIR=build
-CMD_DIR=./cmd/mcp-abap-adt-go
+CMD_DIR=./cmd/mcp-adt-go
 
 # Version info
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")

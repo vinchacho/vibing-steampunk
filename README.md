@@ -1,7 +1,7 @@
 
 ![Vibing ABAP Developer](./media/vibing-steamer.png)
 
-# mcp-abap-adt-go
+# mcp-adt-go
 
 A Go-native MCP (Model Context Protocol) server for SAP ABAP Development Tools (ADT).
 
@@ -27,7 +27,7 @@ This project stands on the shoulders of giants:
 | [abap-adt-api](https://github.com/marcellourbani/abap-adt-api) | Marcello Urbani | TypeScript library that implements the ADT REST API. Powers the [ABAP Remote FS](https://github.com/marcellourbani/vscode_abap_remote_fs) VS Code extension. The definitive reference for ADT API implementation. |
 | [mcp-abap-adt](https://github.com/mario-andrle/mcp-abap-adt) | Mario Andrle | First MCP server for ABAP ADT in TypeScript/Node.js. Pioneered the concept of AI-assisted ABAP development via MCP. |
 
-**mcp-abap-adt-go** is a complete rewrite in Go, providing:
+**mcp-adt-go** is a complete rewrite in Go, providing:
 - Single binary with zero runtime dependencies
 - Extended toolset (36 vs 13 tools)
 - Full CRUD operations and code intelligence
@@ -37,7 +37,7 @@ This project stands on the shoulders of giants:
 
 Comparison of ADT capabilities across implementations:
 
-| Capability | ADT (Eclipse) | abap-adt-api (TS) | mcp-abap-adt (TS) | **mcp-abap-adt-go** |
+| Capability | ADT (Eclipse) | abap-adt-api (TS) | mcp-abap-adt (TS) | **mcp-adt-go** |
 |------------|:-------------:|:-----------------:|:-----------------:|:-------------------:|
 | **Source Read** |
 | Programs, Classes, Interfaces | Y | Y | Y | **Y** |
@@ -194,7 +194,7 @@ Add to your Claude Desktop configuration (`~/.config/claude/claude_desktop_confi
 {
   "mcpServers": {
     "abap-adt": {
-      "command": "/path/to/mcp-abap-adt-go",
+      "command": "/path/to/mcp-adt-go",
       "env": {
         "SAP_URL": "https://your-sap-host:44300",
         "SAP_USER": "your-username",
@@ -215,7 +215,7 @@ Add `.mcp.json` to your project root:
 {
   "mcpServers": {
     "abap-adt": {
-      "command": "/path/to/mcp-abap-adt-go",
+      "command": "/path/to/mcp-adt-go",
       "env": {
         "SAP_URL": "https://your-sap-host:44300",
         "SAP_USER": "your-username",
@@ -253,8 +253,8 @@ make build-windows
 ## Architecture
 
 ```
-mcp-abap-adt-go/
-├── cmd/mcp-abap-adt-go/     # Main entry point
+mcp-adt-go/
+├── cmd/mcp-adt-go/          # Main entry point
 │   └── main.go              # MCP server startup
 ├── pkg/adt/                 # ADT client library
 │   ├── client.go            # Main client facade + read operations
@@ -275,7 +275,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed architecture documentation.
 
 ## Comparison Summary
 
-| Aspect | mcp-abap-adt (TS) | mcp-abap-adt-go |
+| Aspect | mcp-abap-adt (TS) | mcp-adt-go |
 |--------|-------------------|-----------------|
 | **Tools** | 13 | **36** |
 | **Language** | TypeScript | Go |
