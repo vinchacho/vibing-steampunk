@@ -307,3 +307,174 @@ func TestAPIError_Error(t *testing.T) {
 		t.Error("Error string should contain path")
 	}
 }
+
+func TestTransport_Request_CookieAuth(t *testing.T) {
+	mock := &mockHTTPClient{
+		responses: []*http.Response{
+			newMockResponse(200, "OK", map[string]string{"X-CSRF-Token": "test-token"}),
+		},
+	}
+
+	cookies := map[string]string{
+		"sap-usercontext":       "sap-language=EN&sap-client=001",
+		"SAP_SESSIONID_A4H_001": "session123",
+		"MYSAPSSO2":             "sso-token-xyz",
+	}
+
+	cfg := NewConfig("https://sap.example.com:44300", "", "", WithCookies(cookies))
+	transport := NewTransportWithClient(cfg, mock)
+
+	_, err := transport.Request(context.Background(), "/sap/bc/adt/test", nil)
+	if err != nil {
+		t.Fatalf("Request failed: %v", err)
+	}
+
+	if len(mock.requests) != 1 {
+		t.Fatalf("Expected 1 request, got %d", len(mock.requests))
+	}
+
+	req := mock.requests[0]
+
+	// Should NOT have basic auth
+	_, _, ok := req.BasicAuth()
+	if ok {
+		t.Error("Basic auth should NOT be set when using cookie auth")
+	}
+
+	// Should have all cookies
+	foundCookies := make(map[string]string)
+	for _, c := range req.Cookies() {
+		foundCookies[c.Name] = c.Value
+	}
+
+	for name, value := range cookies {
+		if foundCookies[name] != value {
+			t.Errorf("Cookie[%q] = %q, want %q", name, foundCookies[name], value)
+		}
+	}
+}
+
+func TestTransport_Request_CookieAuth_CSRF(t *testing.T) {
+	mock := &mockHTTPClient{
+		responses: []*http.Response{
+			// First: fetch CSRF token
+			newMockResponse(200, "OK", map[string]string{"X-CSRF-Token": "csrf-token-456"}),
+			// Second: actual POST request
+			newMockResponse(200, "OK", nil),
+		},
+	}
+
+	cookies := map[string]string{
+		"SAP_SESSIONID": "session123",
+	}
+
+	cfg := NewConfig("https://sap.example.com:44300", "", "", WithCookies(cookies))
+	transport := NewTransportWithClient(cfg, mock)
+
+	// Make a POST request (requires CSRF)
+	_, err := transport.Request(context.Background(), "/sap/bc/adt/test", &RequestOptions{
+		Method: http.MethodPost,
+		Body:   []byte("test body"),
+	})
+	if err != nil {
+		t.Fatalf("Request failed: %v", err)
+	}
+
+	// Should have made 2 requests: CSRF fetch + actual POST
+	if len(mock.requests) != 2 {
+		t.Fatalf("Expected 2 requests, got %d", len(mock.requests))
+	}
+
+	// Both requests should have cookies
+	for i, req := range mock.requests {
+		found := false
+		for _, c := range req.Cookies() {
+			if c.Name == "SAP_SESSIONID" && c.Value == "session123" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Request %d: missing SAP_SESSIONID cookie", i+1)
+		}
+	}
+
+	// Second request should include CSRF token
+	postReq := mock.requests[1]
+	if postReq.Header.Get("X-CSRF-Token") != "csrf-token-456" {
+		t.Errorf("POST request CSRF token = %v, want csrf-token-456", postReq.Header.Get("X-CSRF-Token"))
+	}
+}
+
+func TestTransport_Request_BasicAuth_NotAffectedByCookies(t *testing.T) {
+	// This test ensures basic auth still works correctly and takes precedence
+	mock := &mockHTTPClient{
+		responses: []*http.Response{
+			newMockResponse(200, "OK", map[string]string{"X-CSRF-Token": "test-token"}),
+		},
+	}
+
+	cfg := NewConfig("https://sap.example.com:44300", "testuser", "testpass")
+	transport := NewTransportWithClient(cfg, mock)
+
+	_, err := transport.Request(context.Background(), "/sap/bc/adt/test", nil)
+	if err != nil {
+		t.Fatalf("Request failed: %v", err)
+	}
+
+	req := mock.requests[0]
+
+	// Should have basic auth
+	user, pass, ok := req.BasicAuth()
+	if !ok {
+		t.Error("Basic auth should be set")
+	}
+	if user != "testuser" {
+		t.Errorf("Username = %v, want testuser", user)
+	}
+	if pass != "testpass" {
+		t.Errorf("Password = %v, want testpass", pass)
+	}
+}
+
+func TestTransport_Request_BothAuthMethods(t *testing.T) {
+	// When both basic auth and cookies are provided, both should be sent
+	mock := &mockHTTPClient{
+		responses: []*http.Response{
+			newMockResponse(200, "OK", nil),
+		},
+	}
+
+	cfg := NewConfig("https://sap.example.com:44300", "testuser", "testpass",
+		WithCookies(map[string]string{"session": "abc123"}),
+	)
+	transport := NewTransportWithClient(cfg, mock)
+
+	_, err := transport.Request(context.Background(), "/sap/bc/adt/test", nil)
+	if err != nil {
+		t.Fatalf("Request failed: %v", err)
+	}
+
+	req := mock.requests[0]
+
+	// Should have basic auth
+	user, _, ok := req.BasicAuth()
+	if !ok {
+		t.Error("Basic auth should be set")
+	}
+	if user != "testuser" {
+		t.Errorf("Username = %v, want testuser", user)
+	}
+
+	// Should also have cookies
+	found := false
+	for _, c := range req.Cookies() {
+		if c.Name == "session" && c.Value == "abc123" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("Cookie should also be present when both auth methods are set")
+	}
+}
