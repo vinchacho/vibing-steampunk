@@ -231,18 +231,93 @@ ADT XML types and parsing utilities for request/response handling.
 
 ## Testing
 
-### Unit Tests (84 tests)
-- `*_test.go` files test with mock HTTP client
-- No SAP system required
-- Run with: `go test ./...`
-- Coverage: ~24% (pkg/adt), ~10% (internal/mcp)
+### Unit Tests (154 tests)
 
-### Integration Tests (20+ tests)
-- `integration_test.go` tests against real SAP system
-- Build tag: `integration`
+**Mock-based testing** - No SAP system required
+- Mock HTTP transport intercepts network calls
+- Predefined responses simulate SAP behavior
+- Fast execution: ~0.02s total
+- Run with: `go test ./...`
+- All tests run in CI/CD
+
+**Test files:**
+```
+pkg/adt/
+├── client_test.go         # Read operations (SearchObject, Get*)
+├── workflows_test.go      # Unified tools (GetSource, WriteSource, Grep*)
+├── http_test.go           # HTTP transport (CSRF, sessions, cookies)
+├── cookies_test.go        # Cookie file parsing (Netscape format)
+├── fileparser_test.go     # ABAP file type detection
+├── xml_test.go            # XML parsing (ADT responses)
+├── config_test.go         # Configuration options
+└── safety_test.go         # Safety checks (read-only, SQL blocking)
+internal/mcp/server_test.go # MCP server
+```
+
+**What's tested:**
+- ✅ URL construction for all object types
+- ✅ Request parameter handling
+- ✅ Response parsing (XML, JSON)
+- ✅ Error handling and validation
+- ✅ Type dispatching (PROG vs CLAS vs FUNC)
+- ✅ Unified tool logic (GetSource, WriteSource, GrepObjects, GrepPackages)
+- ✅ Option handling (include types, parent names, modes)
+
+**What's NOT tested (requires integration tests):**
+- ❌ Real network communication
+- ❌ Actual SAP system behavior
+- ❌ Authentication handshake
+- ❌ CSRF token refresh
+- ❌ Lock conflicts
+- ❌ Activation errors
+
+### Mock HTTP Transport
+
+Unit tests use `mockTransportClient` / `mockWorkflowTransport` to replace real HTTP:
+
+```go
+// Mock replaces real HTTP client
+mock := &mockWorkflowTransport{
+    responses: map[string]*http.Response{
+        "/sap/bc/adt/programs/programs/ZTEST/source/main":
+            // Fake response with ABAP source code
+            newTestResponse(`REPORT ztest.\nWRITE: 'Hello'.`),
+    },
+}
+
+// Inject mock into client
+transport := NewTransportWithClient(cfg, mock)
+client := NewClientWithTransport(cfg, transport)
+
+// Test runs without network calls
+result, err := client.GetSource(ctx, "PROG", "ZTEST", &GetSourceOptions{})
+```
+
+**Benefits:**
+- Tests run on any machine (no SAP needed)
+- Reliable (no network flakiness)
+- Fast (milliseconds vs seconds)
+- Deterministic (same results every time)
+- CI/CD friendly (no external dependencies)
+
+### Integration Tests (21+ tests)
+
+**Real SAP system testing** - Full end-to-end verification
+- `integration_test.go` with build tag: `integration`
 - Run with: `go test -tags=integration ./pkg/adt/`
 - Requires: `SAP_URL`, `SAP_USER`, `SAP_PASSWORD`, `SAP_CLIENT`
 - Creates temporary objects in `$TMP` package, cleans up after
+- Tests: Authentication, CSRF, locking, activation, unit test execution
+
+**What's tested:**
+- ✅ Complete CRUD workflows (Create → Lock → Update → Unlock → Activate)
+- ✅ Real XML/JSON parsing from actual SAP responses
+- ✅ Authentication and session management
+- ✅ CSRF token handling
+- ✅ Lock acquisition and release
+- ✅ Syntax check and activation
+- ✅ ABAP Unit test execution
+- ✅ Package creation and deletion
 
 ## Design Decisions
 

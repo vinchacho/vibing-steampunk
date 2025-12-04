@@ -145,12 +145,14 @@ case "NewTool":
 
 ## Testing
 
-### Unit Tests (84 tests)
-- Mock HTTP client (see `client_test.go`, `http_test.go`)
+### Unit Tests (154 tests)
+- Mock HTTP client (see `client_test.go`, `http_test.go`, `workflows_test.go`)
 - Cookie parsing tests (`cookies_test.go`)
+- Unified tools tests (GetSource, WriteSource, GrepObjects, GrepPackages)
+- Safety checks (`safety_test.go`)
 - Run: `go test ./...`
 
-### Integration Tests (20+ tests)
+### Integration Tests (21+ tests)
 - Build tag: `integration`
 - Create objects in `$TMP` package, clean up after
 - Run: `go test -tags=integration -v ./pkg/adt/`
@@ -248,11 +250,11 @@ When creating a new report:
 
 | Metric | Value |
 |--------|-------|
-| **Tools** | 43 |
-| **Unit Tests** | 109 (84 ADT + 25 safety) |
+| **Tools** | 45 (19 focused, 45 expert) |
+| **Unit Tests** | 154 |
 | **Integration Tests** | 21+ |
 | **Platforms** | 9 |
-| **Phase** | 5 (CDS Dependency Analysis) - Complete |
+| **Phase** | 2 (Focused Mode) - Complete |
 | **Reports** | 11 numbered + 6 reference docs |
 | **Cache Package** | ✅ Complete (in-memory + SQLite) |
 | **Safety System** | ✅ Complete (operation filtering, package restrictions) |

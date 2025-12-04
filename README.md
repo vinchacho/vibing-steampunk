@@ -429,6 +429,69 @@ make build-darwin
 make build-windows
 ```
 
+## Testing
+
+### Test Coverage (154 Tests)
+
+**Unit Tests** - Fast, no dependencies, run everywhere
+- **154 tests** across all packages
+- Mock-based HTTP transport (no real SAP system needed)
+- Test all unified tools: GetSource, WriteSource, GrepObjects, GrepPackages
+- Coverage: client operations, workflows, HTTP transport, XML parsing, cookies, file parsing, safety checks
+
+**Integration Tests** - Real SAP system required
+- **21+ tests** with live SAP ABAP server
+- Tagged with `integration` build tag
+- Full end-to-end workflows
+- Create, modify, activate, delete real objects
+- Verify against actual ADT API responses
+
+### Testing Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Unit Tests (154)                                           │
+│  ├── Mock HTTP Transport (no network calls)                │
+│  ├── Predefined responses simulate SAP behavior            │
+│  ├── Fast execution (~0.02s total)                         │
+│  └── Tests: Logic, parsing, error handling, type dispatch  │
+└─────────────────────────────────────────────────────────────┘
+                         ↓ All tests pass ↓
+┌─────────────────────────────────────────────────────────────┐
+│  Integration Tests (21+)                                    │
+│  ├── Real HTTP calls to SAP system                         │
+│  ├── Tests: Authentication, CSRF, activation, unit tests   │
+│  ├── Requires: SAP_URL, SAP_USER, SAP_PASSWORD            │
+│  └── Run: go test -tags=integration -v ./pkg/adt/         │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### What's Mocked vs Real
+
+| Aspect | Unit Tests | Integration Tests |
+|--------|------------|-------------------|
+| **HTTP calls** | ✅ Mocked | ❌ Real network |
+| **SAP responses** | ✅ Predefined XML/JSON | ❌ Actual SAP data |
+| **Speed** | ⚡ Milliseconds | 🐌 Seconds |
+| **Dependencies** | None | SAP system |
+| **CI/CD** | ✅ Always runs | ⚠️ Optional |
+| **Tests** | Logic, parsing | End-to-end workflows |
+
+### Test Files
+
+```
+pkg/adt/
+├── client_test.go         # Client operations (SearchObject, Get*)
+├── workflows_test.go      # Unified tools (GetSource, WriteSource, Grep*)
+├── http_test.go           # HTTP transport (CSRF, sessions)
+├── cookies_test.go        # Cookie file parsing
+├── fileparser_test.go     # ABAP file detection
+├── xml_test.go            # XML parsing
+├── config_test.go         # Configuration
+├── safety_test.go         # Safety checks
+└── integration_test.go    # Real SAP system tests
+```
+
 ## Architecture
 
 ```
@@ -458,8 +521,8 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed architecture documentation.
 
 | Metric | Value |
 |--------|-------|
-| **Tools** | 43 |
-| **Unit Tests** | 91 |
+| **Tools** | 45 (19 focused, 45 expert) |
+| **Unit Tests** | 154 |
 | **Integration Tests** | 21+ |
 | **Platforms** | 9 (Linux, macOS, Windows × amd64/arm64/386) |
 

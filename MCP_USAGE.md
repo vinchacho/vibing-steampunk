@@ -4,16 +4,35 @@
 
 **Purpose:** Machine-friendly reference for optimal tool usage patterns, workflows, and best practices.
 
+## Server Modes (v2.0.0+)
+
+This server operates in two modes:
+
+### Focused Mode (Default) - 19 Tools
+**Optimized for AI agents.** Reduces cognitive load and token overhead by 58%.
+- **Unified tools**: `GetSource`, `WriteSource` (replace 11 granular tools)
+- **Enhanced search**: `GrepObjects`, `GrepPackages` (multi-object, recursive)
+- **Clear naming**: `ImportFromFile` (File→SAP), `ExportToFile` (SAP→File)
+- **Enable**: Default (or `--mode=focused`)
+
+### Expert Mode - 45 Tools
+**Full access for edge cases.** All tools including atomic operations.
+- **Enable**: `--mode=expert` or `SAP_MODE=expert`
+- Use when you need: atomic CRUD, granular reads, class includes, legacy tools
+
+**Recommendation:** Use focused mode unless you specifically need atomic operations or have existing workflows that depend on granular tools.
+
 ## Quick Reference
 
-| Workflow | Recommended Tools | Anti-Pattern |
-|----------|-------------------|--------------|
-| Make small code change | `GrepObject` → `EditSource` | `GetProgram` → `WriteProgram` (token-heavy) |
-| Find pattern before editing | `GrepObject` or `GrepPackage` → `EditSource` | Editing without searching first |
-| Deploy large generated file | `DeployFromFile` | Pasting source in WriteClass (token limit) |
-| Create new object with tests | `CreateClassWithTests` | Separate create + lock + write + activate steps |
-| Package-wide refactoring | `GrepPackage` → multiple `EditSource` calls | Manual search across objects |
-| Export for version control | `SaveToFile` | Manual copy-paste |
+| Workflow | Recommended Tools (Focused Mode) | Anti-Pattern |
+|----------|-----------------------------------|--------------|
+| Make small code change | `GrepObjects` → `EditSource` | `GetSource` → `WriteSource` (token-heavy) |
+| Find pattern before editing | `GrepObjects` or `GrepPackages` → `EditSource` | Editing without searching first |
+| Deploy large generated file | `ImportFromFile` | Pasting source in WriteSource (token limit) |
+| Namespace-wide search | `GrepPackages(["Z*"], include_subpackages=true)` | Multiple GrepPackage calls |
+| Read any object type | `GetSource(type, name)` | Guessing GetProgram vs GetClass |
+| Create or update | `WriteSource(mode="upsert")` | Checking existence first |
+| Export for version control | `ExportToFile` | Manual copy-paste |
 
 ## Tool Selection Decision Tree
 
