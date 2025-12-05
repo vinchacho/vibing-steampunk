@@ -120,7 +120,7 @@ func (c *Client) AMDPDebuggerStart(ctx context.Context, user, cascadeMode string
 	resp, err := c.transport.Request(ctx, amdpDebuggerBase, &RequestOptions{
 		Method: http.MethodPost,
 		Query:  params,
-		Accept: "application/xml",
+		Accept: "application/vnd.sap.adt.amdp.dbg.startmain.v1+xml",
 	})
 	if err != nil {
 		return nil, fmt.Errorf("starting AMDP debugger: %w", err)
