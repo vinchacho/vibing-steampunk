@@ -3,6 +3,12 @@
 
 ## What's New
 
+**v2.7.0** - External Debugger & Listener
+- Set external breakpoints (line, exception, statement, message)
+- Long-polling debug listener for autonomous debugging
+- Foundation for AI-powered debugger scripting
+- Vision: automated root cause analysis via debug scripts
+
 **v2.6.0** - RAP OData E2E Support
 - Create CDS views, Service Definitions, and Service Bindings
 - Publish OData V2/V4 services directly from AI assistant
@@ -20,6 +26,7 @@ A Go-native MCP (Model Context Protocol) server for SAP ABAP Development Tools (
 
 | Feature | Description |
 |---------|-------------|
+| **External Debugger** | Breakpoints, debug listener, foundation for AI debugger scripting |
 | **RAP OData E2E** | Create CDS views, Service Definitions, Bindings → Publish OData services |
 | **Focused Mode** | 31 curated tools optimized for AI assistants (58% token reduction) |
 | **AI-Powered RCA** | Root cause analysis with dumps, traces, profiler + code intelligence |

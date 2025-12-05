@@ -173,6 +173,11 @@ func (s *Server) registerTools(mode string) {
 		// SQL Trace / ST05 (2)
 		"GetSQLTraceState": true, // Check if SQL trace is active
 		"ListSQLTraces":    true, // List SQL trace files
+
+		// External Breakpoints (3)
+		"SetExternalBreakpoint":    true, // Set external breakpoint
+		"GetExternalBreakpoints":   true, // Get external breakpoints
+		"DeleteExternalBreakpoint": true, // Delete external breakpoint
 	}
 
 	// Helper to check if tool should be registered
@@ -530,6 +535,67 @@ func (s *Server) registerTools(mode string) {
 				mcp.Description("Maximum number of results (default: 100)"),
 			),
 		), s.handleListSQLTraces)
+	}
+
+	// --- External Breakpoints ---
+
+	// SetExternalBreakpoint
+	if shouldRegister("SetExternalBreakpoint") {
+		s.mcpServer.AddTool(mcp.NewTool("SetExternalBreakpoint",
+			mcp.WithDescription("Set an external (persistent) breakpoint. Supports line, exception, statement, and message breakpoints. External breakpoints persist across sessions and trigger when the specified user runs code that hits them."),
+			mcp.WithString("kind",
+				mcp.Required(),
+				mcp.Description("Breakpoint kind: 'line', 'exception', 'statement', or 'message'"),
+			),
+			mcp.WithString("object_uri",
+				mcp.Description("ADT URI for line breakpoints (e.g., '/sap/bc/adt/programs/programs/ZTEST/source/main')"),
+			),
+			mcp.WithNumber("line",
+				mcp.Description("Line number for line breakpoints (1-based)"),
+			),
+			mcp.WithString("exception",
+				mcp.Description("Exception class for exception breakpoints (e.g., 'CX_SY_ZERODIVIDE')"),
+			),
+			mcp.WithString("statement",
+				mcp.Description("Statement type for statement breakpoints (e.g., 'CALL FUNCTION', 'RAISE EXCEPTION')"),
+			),
+			mcp.WithString("message_id",
+				mcp.Description("Message ID for message breakpoints"),
+			),
+			mcp.WithString("message_type",
+				mcp.Description("Message type for message breakpoints (E=Error, W=Warning, I=Info, S=Success, A=Abort)"),
+			),
+			mcp.WithString("condition",
+				mcp.Description("Optional condition expression (ABAP logical expression)"),
+			),
+			mcp.WithString("user",
+				mcp.Description("User to debug (defaults to current user)"),
+			),
+		), s.handleSetExternalBreakpoint)
+	}
+
+	// GetExternalBreakpoints
+	if shouldRegister("GetExternalBreakpoints") {
+		s.mcpServer.AddTool(mcp.NewTool("GetExternalBreakpoints",
+			mcp.WithDescription("Get all external (persistent) breakpoints for a user."),
+			mcp.WithString("user",
+				mcp.Description("User to get breakpoints for (defaults to current user)"),
+			),
+		), s.handleGetExternalBreakpoints)
+	}
+
+	// DeleteExternalBreakpoint
+	if shouldRegister("DeleteExternalBreakpoint") {
+		s.mcpServer.AddTool(mcp.NewTool("DeleteExternalBreakpoint",
+			mcp.WithDescription("Delete an external breakpoint by ID."),
+			mcp.WithString("breakpoint_id",
+				mcp.Required(),
+				mcp.Description("ID of the breakpoint to delete"),
+			),
+			mcp.WithString("user",
+				mcp.Description("User who owns the breakpoint (defaults to current user)"),
+			),
+		), s.handleDeleteExternalBreakpoint)
 	}
 
 	// SearchObject
@@ -3492,4 +3558,169 @@ func (s *Server) handleExecuteABAP(ctx context.Context, request mcp.CallToolRequ
 	}
 
 	return mcp.NewToolResultText(sb.String()), nil
+}
+
+// --- External Breakpoint Handlers ---
+
+func (s *Server) handleSetExternalBreakpoint(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	kind, ok := request.Params.Arguments["kind"].(string)
+	if !ok || kind == "" {
+		return newToolResultError("kind is required"), nil
+	}
+
+	// Build breakpoint based on kind
+	var bp adt.Breakpoint
+	bp.Enabled = true
+
+	switch kind {
+	case "line":
+		objectURI, _ := request.Params.Arguments["object_uri"].(string)
+		if objectURI == "" {
+			return newToolResultError("object_uri is required for line breakpoints"), nil
+		}
+		lineNum, _ := request.Params.Arguments["line"].(float64)
+		if lineNum <= 0 {
+			return newToolResultError("line number is required for line breakpoints"), nil
+		}
+		bp = adt.NewLineBreakpoint(objectURI, int(lineNum))
+
+	case "exception":
+		exception, _ := request.Params.Arguments["exception"].(string)
+		if exception == "" {
+			return newToolResultError("exception class is required for exception breakpoints"), nil
+		}
+		bp = adt.NewExceptionBreakpoint(exception)
+
+	case "statement":
+		statement, _ := request.Params.Arguments["statement"].(string)
+		if statement == "" {
+			return newToolResultError("statement is required for statement breakpoints"), nil
+		}
+		bp = adt.NewStatementBreakpoint(statement)
+
+	case "message":
+		messageID, _ := request.Params.Arguments["message_id"].(string)
+		messageType, _ := request.Params.Arguments["message_type"].(string)
+		if messageID == "" || messageType == "" {
+			return newToolResultError("message_id and message_type are required for message breakpoints"), nil
+		}
+		bp = adt.NewMessageBreakpoint(messageID, messageType)
+
+	default:
+		return newToolResultError(fmt.Sprintf("invalid breakpoint kind: %s (must be line, exception, statement, or message)", kind)), nil
+	}
+
+	// Add condition if specified
+	if condition, ok := request.Params.Arguments["condition"].(string); ok && condition != "" {
+		bp.Condition = condition
+	}
+
+	// Build request
+	user, _ := request.Params.Arguments["user"].(string)
+	req := &adt.BreakpointRequest{
+		Scope:         adt.BreakpointScopeExternal,
+		DebuggingMode: adt.DebuggingModeUser,
+		User:          user,
+		Breakpoints:   []adt.Breakpoint{bp},
+	}
+
+	resp, err := s.adtClient.SetExternalBreakpoint(ctx, req)
+	if err != nil {
+		return newToolResultError(fmt.Sprintf("SetExternalBreakpoint failed: %v", err)), nil
+	}
+
+	// Format output
+	var sb strings.Builder
+	sb.WriteString("External Breakpoint Set:\n\n")
+
+	for _, bp := range resp.Breakpoints {
+		sb.WriteString(fmt.Sprintf("ID: %s\n", bp.ID))
+		sb.WriteString(fmt.Sprintf("Kind: %s\n", bp.Kind))
+		sb.WriteString(fmt.Sprintf("Enabled: %t\n", bp.Enabled))
+
+		switch bp.Kind {
+		case adt.BreakpointKindLine:
+			sb.WriteString(fmt.Sprintf("URI: %s\n", bp.URI))
+			sb.WriteString(fmt.Sprintf("Line: %d\n", bp.Line))
+			if bp.ActualLine > 0 && bp.ActualLine != bp.Line {
+				sb.WriteString(fmt.Sprintf("Actual Line: %d\n", bp.ActualLine))
+			}
+		case adt.BreakpointKindException:
+			sb.WriteString(fmt.Sprintf("Exception: %s\n", bp.Exception))
+		case adt.BreakpointKindStatement:
+			sb.WriteString(fmt.Sprintf("Statement: %s\n", bp.Statement))
+		case adt.BreakpointKindMessage:
+			sb.WriteString(fmt.Sprintf("Message: %s/%s\n", bp.MessageID, bp.MessageType))
+		}
+
+		if bp.Condition != "" {
+			sb.WriteString(fmt.Sprintf("Condition: %s\n", bp.Condition))
+		}
+		if bp.ObjectName != "" {
+			sb.WriteString(fmt.Sprintf("Object: %s\n", bp.ObjectName))
+		}
+	}
+
+	return mcp.NewToolResultText(sb.String()), nil
+}
+
+func (s *Server) handleGetExternalBreakpoints(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	user, _ := request.Params.Arguments["user"].(string)
+
+	resp, err := s.adtClient.GetExternalBreakpoints(ctx, user)
+	if err != nil {
+		return newToolResultError(fmt.Sprintf("GetExternalBreakpoints failed: %v", err)), nil
+	}
+
+	if len(resp.Breakpoints) == 0 {
+		return mcp.NewToolResultText("No external breakpoints found."), nil
+	}
+
+	// Format output
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("External Breakpoints (%d):\n\n", len(resp.Breakpoints)))
+
+	for i, bp := range resp.Breakpoints {
+		sb.WriteString(fmt.Sprintf("[%d] ID: %s\n", i+1, bp.ID))
+		sb.WriteString(fmt.Sprintf("    Kind: %s\n", bp.Kind))
+		sb.WriteString(fmt.Sprintf("    Enabled: %t\n", bp.Enabled))
+
+		switch bp.Kind {
+		case adt.BreakpointKindLine:
+			sb.WriteString(fmt.Sprintf("    URI: %s\n", bp.URI))
+			sb.WriteString(fmt.Sprintf("    Line: %d\n", bp.Line))
+			if bp.ObjectName != "" {
+				sb.WriteString(fmt.Sprintf("    Object: %s\n", bp.ObjectName))
+			}
+		case adt.BreakpointKindException:
+			sb.WriteString(fmt.Sprintf("    Exception: %s\n", bp.Exception))
+		case adt.BreakpointKindStatement:
+			sb.WriteString(fmt.Sprintf("    Statement: %s\n", bp.Statement))
+		case adt.BreakpointKindMessage:
+			sb.WriteString(fmt.Sprintf("    Message: %s/%s\n", bp.MessageID, bp.MessageType))
+		}
+
+		if bp.Condition != "" {
+			sb.WriteString(fmt.Sprintf("    Condition: %s\n", bp.Condition))
+		}
+		sb.WriteString("\n")
+	}
+
+	return mcp.NewToolResultText(sb.String()), nil
+}
+
+func (s *Server) handleDeleteExternalBreakpoint(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	breakpointID, ok := request.Params.Arguments["breakpoint_id"].(string)
+	if !ok || breakpointID == "" {
+		return newToolResultError("breakpoint_id is required"), nil
+	}
+
+	user, _ := request.Params.Arguments["user"].(string)
+
+	err := s.adtClient.DeleteExternalBreakpoint(ctx, breakpointID, user)
+	if err != nil {
+		return newToolResultError(fmt.Sprintf("DeleteExternalBreakpoint failed: %v", err)), nil
+	}
+
+	return mcp.NewToolResultText(fmt.Sprintf("Breakpoint %s deleted successfully.", breakpointID)), nil
 }

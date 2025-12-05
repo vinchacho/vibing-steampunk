@@ -66,6 +66,7 @@ pkg/
 │   ├── crud.go               # CRUD operations (lock, create, update, delete)
 │   ├── devtools.go           # Dev tools (syntax check, activate, unit tests)
 │   ├── codeintel.go          # Code intelligence (find def, refs, completion)
+│   ├── debugger.go           # External debugger (breakpoints, listener)
 │   ├── workflows.go          # High-level workflow operations
 │   ├── cds.go                # CDS view dependency analysis
 │   ├── safety.go             # Safety & protection configuration
@@ -101,6 +102,7 @@ pkg/
 | Add CRUD operation | `pkg/adt/crud.go` |
 | Add development tool | `pkg/adt/devtools.go` |
 | Add code intelligence | `pkg/adt/codeintel.go` |
+| Add debugger feature | `pkg/adt/debugger.go` |
 | Add workflow | `pkg/adt/workflows.go` |
 | Add XML types | `pkg/adt/xml.go` |
 | Add integration test | `pkg/adt/integration_test.go` |
@@ -228,6 +230,7 @@ All research reports, analysis documents, and design specifications follow this 
 - **002:** Self-Replicating Deploy Agent Design - Rejected due to STRUST/SSL certificate concerns
 - **003:** ADT-Assisted Universal Deployment - Factory Pattern strategy via vsp (ADT-native)
 - **004:** ExecuteABAP Implementation - ABAP code execution via Unit Test wrapper (385 LOC, 2 tests)
+- **014:** External Debugger Scripting Vision - Watchpoints API, AI-powered debugger scripting architecture
 
 #### Reference Documentation (Non-numbered)
 - `abap-adt-discovery-guide.md` - ADT API discovery process
@@ -265,8 +268,8 @@ When creating a new report:
 | Metric | Value |
 |--------|-------|
 | **Tools** | 68 (31 focused, 68 expert) |
-| **Unit Tests** | 249 |
-| **Integration Tests** | 22+ |
+| **Unit Tests** | 270 |
+| **Integration Tests** | 34 |
 | **Platforms** | 9 |
 | **Phase** | 4 (Native ADT Features) - In Progress |
 | **Reports** | 17 numbered + 6 reference docs |
@@ -280,6 +283,7 @@ When creating a new report:
 | **ABAP Profiler** | ✅ Complete (ListTraces, GetTrace - ATRA) |
 | **SQL Trace** | ✅ Complete (GetSQLTraceState, ListSQLTraces - ST05) |
 | **RAP OData E2E** | ✅ Complete (DDLS, SRVD, SRVB create + publish) |
+| **External Debugger** | ✅ Complete (Breakpoints, Debug Listener, Debuggee parsing) |
 
 ### DSL & Workflow Usage
 
