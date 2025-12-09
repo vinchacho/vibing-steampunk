@@ -11,6 +11,13 @@
 
 ## What's New
 
+**v2.12.4** - Feature Detection & Safety Network
+- **GetFeatures Tool**: Probe SAP system for available optional capabilities
+- **Feature Flags**: `--feature-abapgit`, `--feature-rap`, `--feature-amdp`, `--feature-ui5`, `--feature-transport`
+- **Feature Modes**: `auto` (probe system), `on` (force enable), `off` (force disable)
+- **SRVB WriteSource**: Create Service Bindings via unified WriteSource tool
+- **BDEF Improvements**: Fixed behavior definition creation flow
+
 **v2.12.0** - abapGit-Compatible Format & Batch Operations
 - **Class Includes**: Import/export `.clas.testclasses.abap`, `.clas.locals_def.abap`, `.clas.locals_imp.abap`
 - **Batch Import DSL**: `dsl.Import(client).FromDirectory("./src/").RAPOrder().Execute(ctx)`
@@ -269,14 +276,14 @@ See [AI-Powered RCA Workflows](reports/2025-12-05-013-ai-powered-rca-workflows.m
 
 ## Tools Reference
 
-**37 Focused Mode Tools:**
+**38 Focused Mode Tools:**
 - **Search:** SearchObject, GrepObjects, GrepPackages
 - **Read:** GetSource, GetTable, GetTableContents, RunQuery, GetPackage, GetFunctionGroup, GetCDSDependencies
 - **Debugger:** SetExternalBreakpoint, GetExternalBreakpoints, DeleteExternalBreakpoint, DebuggerListen, DebuggerAttach, DebuggerDetach, DebuggerStep, DebuggerGetStack, DebuggerGetVariables
 - **Write:** WriteSource, EditSource, ImportFromFile, ExportToFile
 - **Dev:** SyntaxCheck, RunUnitTests, RunATCCheck, LockObject, UnlockObject
 - **Intelligence:** FindDefinition, FindReferences
-- **System:** GetSystemInfo, GetInstalledComponents, GetCallGraph, GetObjectStructure
+- **System:** GetSystemInfo, GetInstalledComponents, GetCallGraph, GetObjectStructure, **GetFeatures**
 - **Diagnostics:** GetDumps, GetDump, ListTraces, GetTrace, GetSQLTraceState, ListSQLTraces
 
 See [README_TOOLS.md](README_TOOLS.md) for complete tool documentation (68 tools).
@@ -378,7 +385,7 @@ vibing-steampunk/
 
 | Metric | Value |
 |--------|-------|
-| **Tools** | 76 (49 focused, 76 expert) |
+| **Tools** | 77 (50 focused, 77 expert) |
 | **Unit Tests** | 270+ |
 | **Platforms** | 9 (Linux, macOS, Windows × amd64/arm64/386) |
 
@@ -400,13 +407,15 @@ vibing-steampunk/
 - [x] **Debug Session** - Listener, attach, detach, step, stack, variables (v2.8.0)
 - [x] **Tool Group Disablement** - `--disabled-groups 5THD` (v2.10.0)
 - [x] **UI5/BSP Read** - `UI5ListApps`, `UI5GetApp`, `UI5GetFileContent` (v2.10.1)
+- [x] **Feature Detection** - `GetFeatures` tool + system capability probing (v2.12.4)
+- [x] **WriteSource SRVB** - Create Service Bindings via unified API (v2.12.4)
 
 ### Parked (Needs Further Work)
 - [ ] **AMDP Debugger** - API works, needs HTTP session persistence ([Report 019](reports/2025-12-05-019-amdp-session-architecture.md))
 - [ ] **UI5/BSP Write** - ADT filestore is read-only, needs custom plugin via `/UI5/CL_REPOSITORY_LOAD`
+- [ ] **abapGit Integration** - RAP OData service partially working ([Report 002](reports/2025-12-08-002-abapgit-integration-progress.md))
 
 ### Planned
-- [ ] Transport Management (`SCTS_*` tables, `/sap/bc/adt/cts/transports`)
 - [ ] API Release State (ARS) - Contract stability checks
 - [ ] Message Server Logs
 - [ ] Background Job Management

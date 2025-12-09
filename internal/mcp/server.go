@@ -14,10 +14,12 @@ import (
 
 // Server wraps the MCP server with ADT client.
 type Server struct {
-	mcpServer   *server.MCPServer
-	adtClient   *adt.Client
-	amdpSession *adt.AMDPSessionManager // Persistent AMDP debug session (goroutine + channels)
-	config      *Config                  // Server configuration for session manager creation
+	mcpServer      *server.MCPServer
+	adtClient      *adt.Client
+	amdpSession    *adt.AMDPSessionManager // Persistent AMDP debug session (goroutine + channels)
+	config         *Config                  // Server configuration for session manager creation
+	featureProber  *adt.FeatureProber       // Feature detection system (safety network)
+	featureConfig  adt.FeatureConfig        // Feature configuration
 }
 
 // Config holds MCP server configuration.
@@ -53,6 +55,14 @@ type Config struct {
 	EnableTransports  bool     // Explicitly enable transport management (default: disabled)
 	TransportReadOnly bool     // Only allow read operations on transports (list, get)
 	AllowedTransports []string // Whitelist specific transports (supports wildcards like "A4HK*")
+
+	// Feature configuration (safety network)
+	// Values: "auto" (default, probe system), "on" (force enabled), "off" (force disabled)
+	FeatureAbapGit   string // abapGit integration
+	FeatureRAP       string // RAP/OData development (DDLS, BDEF, SRVD, SRVB)
+	FeatureAMDP      string // AMDP/HANA debugger
+	FeatureUI5       string // UI5/Fiori BSP management
+	FeatureTransport string // CTS transport management (distinct from EnableTransports safety)
 }
 
 // NewServer creates a new MCP server for ABAP ADT tools.
@@ -102,6 +112,18 @@ func NewServer(cfg *Config) *Server {
 
 	adtClient := adt.NewClient(cfg.BaseURL, cfg.Username, cfg.Password, opts...)
 
+	// Configure feature detection (safety network)
+	featureConfig := adt.FeatureConfig{
+		AbapGit:   parseFeatureMode(cfg.FeatureAbapGit),
+		RAP:       parseFeatureMode(cfg.FeatureRAP),
+		AMDP:      parseFeatureMode(cfg.FeatureAMDP),
+		UI5:       parseFeatureMode(cfg.FeatureUI5),
+		Transport: parseFeatureMode(cfg.FeatureTransport),
+	}
+
+	// Create feature prober
+	featureProber := adt.NewFeatureProber(adtClient, featureConfig, cfg.Verbose)
+
 	// Create MCP server
 	mcpServer := server.NewMCPServer(
 		"mcp-abap-adt-go",
@@ -111,15 +133,29 @@ func NewServer(cfg *Config) *Server {
 	)
 
 	s := &Server{
-		mcpServer: mcpServer,
-		adtClient: adtClient,
-		config:    cfg,
+		mcpServer:     mcpServer,
+		adtClient:     adtClient,
+		config:        cfg,
+		featureProber: featureProber,
+		featureConfig: featureConfig,
 	}
 
 	// Register tools based on mode and disabled groups
 	s.registerTools(cfg.Mode, cfg.DisabledGroups)
 
 	return s
+}
+
+// parseFeatureMode converts string to FeatureMode
+func parseFeatureMode(s string) adt.FeatureMode {
+	switch strings.ToLower(s) {
+	case "on", "true", "1", "yes", "enabled":
+		return adt.FeatureModeOn
+	case "off", "false", "0", "no", "disabled":
+		return adt.FeatureModeOff
+	default:
+		return adt.FeatureModeAuto
+	}
 }
 
 // ServeStdio starts the MCP server on stdin/stdout.
@@ -503,6 +539,12 @@ func (s *Server) registerTools(mode string, disabledGroups string) {
 			mcp.WithDescription("List installed software components with version information"),
 		), s.handleGetInstalledComponents)
 	}
+
+	// GetFeatures - Feature Detection (Safety Network)
+	// Always registered - provides visibility into what's available
+	s.mcpServer.AddTool(mcp.NewTool("GetFeatures",
+		mcp.WithDescription("Probe SAP system for available features. Returns status of optional capabilities like abapGit, RAP/OData, AMDP debugging, UI5/BSP, and CTS transports. Use this to understand what features are available before attempting to use them."),
+	), s.handleGetFeatures)
 
 	// --- Code Analysis Infrastructure (CAI) ---
 
@@ -2092,6 +2134,29 @@ func (s *Server) handleGetInstalledComponents(ctx context.Context, request mcp.C
 	}
 
 	result, _ := json.MarshalIndent(components, "", "  ")
+	return mcp.NewToolResultText(string(result)), nil
+}
+
+func (s *Server) handleGetFeatures(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// Probe all features
+	results := s.featureProber.ProbeAll(ctx)
+
+	// Format output
+	type featureOutput struct {
+		Features map[string]*adt.FeatureStatus `json:"features"`
+		Summary  string                        `json:"summary"`
+	}
+
+	output := featureOutput{
+		Features: make(map[string]*adt.FeatureStatus),
+		Summary:  s.featureProber.FeatureSummary(ctx),
+	}
+
+	for id, status := range results {
+		output.Features[string(id)] = status
+	}
+
+	result, _ := json.MarshalIndent(output, "", "  ")
 	return mcp.NewToolResultText(string(result)), nil
 }
 

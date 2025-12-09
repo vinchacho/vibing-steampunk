@@ -1898,10 +1898,10 @@ func (c *Client) WriteSource(ctx context.Context, objectType, name, source strin
 
 	// Validate object type
 	switch objectType {
-	case "PROG", "CLAS", "INTF", "DDLS", "BDEF", "SRVD":
-		// Supported types (SRVB is created separately as it has special parameters)
+	case "PROG", "CLAS", "INTF", "DDLS", "BDEF", "SRVD", "SRVB":
+		// Supported types
 	default:
-		result.Message = fmt.Sprintf("Unsupported object type: %s (supported: PROG, CLAS, INTF, DDLS, BDEF, SRVD)", objectType)
+		result.Message = fmt.Sprintf("Unsupported object type: %s (supported: PROG, CLAS, INTF, DDLS, BDEF, SRVD, SRVB)", objectType)
 		return result, nil
 	}
 
@@ -1927,6 +1927,9 @@ func (c *Client) WriteSource(ctx context.Context, objectType, name, source strin
 			objectExists = (err == nil)
 		case "SRVD":
 			_, err := c.GetSRVD(ctx, name)
+			objectExists = (err == nil)
+		case "SRVB":
+			_, err := c.GetSRVB(ctx, name)
 			objectExists = (err == nil)
 		}
 	}
@@ -2139,20 +2142,69 @@ func (c *Client) writeSourceCreate(ctx context.Context, objectType, name, source
 		result.ObjectURL = objectURL
 		sourceURL := objectURL + "/source/main"
 
-		// Create object first (creates empty shell)
-		err := c.CreateObject(ctx, CreateObjectOptions{
+		// Create object first
+		// For BDEF, include source in creation (ADT API requirement)
+		createOpts := CreateObjectOptions{
 			ObjectType:  objType,
 			Name:        name,
 			Description: opts.Description,
 			PackageName: opts.Package,
 			Transport:   opts.Transport,
-		})
+		}
+		if objectType == "BDEF" {
+			createOpts.Source = source // BDEF requires source embedded in creation request
+		}
+		err := c.CreateObject(ctx, createOpts)
 		if err != nil {
 			result.Message = fmt.Sprintf("Failed to create %s: %v", objectType, err)
 			return result, nil
 		}
 
-		// Syntax check
+		// For BDEF, creation creates empty shell, then update source
+		if objectType == "BDEF" {
+			sourceURL := objectURL + "/source/main"
+
+			// Lock
+			lock, err := c.LockObject(ctx, objectURL, "MODIFY")
+			if err != nil {
+				result.Message = fmt.Sprintf("Failed to lock BDEF: %v", err)
+				return result, nil
+			}
+
+			// Update source
+			err = c.UpdateSource(ctx, sourceURL, source, lock.LockHandle, opts.Transport)
+			if err != nil {
+				// Unlock on failure
+				_ = c.UnlockObject(ctx, objectURL, lock.LockHandle)
+				result.Message = fmt.Sprintf("Failed to update BDEF source: %v", err)
+				return result, nil
+			}
+
+			// Unlock
+			err = c.UnlockObject(ctx, objectURL, lock.LockHandle)
+			if err != nil {
+				result.Message = fmt.Sprintf("Failed to unlock BDEF: %v", err)
+				return result, nil
+			}
+
+			// Activate
+			activation, err := c.Activate(ctx, objectURL, name)
+			if err != nil {
+				result.Message = fmt.Sprintf("Failed to activate: %v", err)
+				result.Activation = activation
+				return result, nil
+			}
+			result.Activation = activation
+			if activation.Success {
+				result.Success = true
+				result.Message = fmt.Sprintf("%s created and activated successfully", objectType)
+			} else {
+				result.Message = "Activation failed - check activation messages"
+			}
+			return result, nil
+		}
+
+		// Syntax check (for DDLS, SRVD)
 		syntaxErrors, err := c.SyntaxCheck(ctx, objectURL, source)
 		if err != nil {
 			result.Message = fmt.Sprintf("Syntax check failed: %v", err)
@@ -2212,6 +2264,73 @@ func (c *Client) writeSourceCreate(ctx context.Context, objectType, name, source
 			result.Message = "Activation failed - check activation messages"
 		}
 
+		return result, nil
+
+	case "SRVB":
+		// SRVB (Service Binding) - source is JSON configuration
+		// Parse JSON to get binding parameters
+		var srvbConfig struct {
+			ServiceDefName string `json:"serviceDefName"`
+			BindingType    string `json:"bindingType"`    // ODATA
+			BindingVersion string `json:"bindingVersion"` // V2 or V4
+			BindingCategory string `json:"bindingCategory"` // 0=WebAPI, 1=UI
+		}
+		if err := json.Unmarshal([]byte(source), &srvbConfig); err != nil {
+			result.Message = fmt.Sprintf("Invalid SRVB JSON config: %v (expected: {\"serviceDefName\":\"...\",\"bindingType\":\"ODATA\",\"bindingVersion\":\"V4\"})", err)
+			return result, nil
+		}
+
+		// Validate required fields
+		if srvbConfig.ServiceDefName == "" {
+			result.Message = "serviceDefName is required in SRVB config"
+			return result, nil
+		}
+
+		// Set defaults
+		if srvbConfig.BindingType == "" {
+			srvbConfig.BindingType = "ODATA"
+		}
+		if srvbConfig.BindingVersion == "" {
+			srvbConfig.BindingVersion = "V4"
+		}
+		if srvbConfig.BindingCategory == "" {
+			srvbConfig.BindingCategory = "0" // Web API
+		}
+
+		objectURL := fmt.Sprintf("/sap/bc/adt/businessservices/bindings/%s", strings.ToLower(name))
+		result.ObjectURL = objectURL
+
+		// Create SRVB
+		err := c.CreateObject(ctx, CreateObjectOptions{
+			ObjectType:        ObjectTypeSRVB,
+			Name:              name,
+			Description:       opts.Description,
+			PackageName:       opts.Package,
+			ServiceDefinition: srvbConfig.ServiceDefName,
+			BindingType:       srvbConfig.BindingType,
+			BindingVersion:    srvbConfig.BindingVersion,
+			BindingCategory:   srvbConfig.BindingCategory,
+			Transport:         opts.Transport,
+		})
+		if err != nil {
+			result.Message = fmt.Sprintf("Failed to create SRVB: %v", err)
+			return result, nil
+		}
+
+		// Activate
+		activation, err := c.Activate(ctx, objectURL, name)
+		if err != nil {
+			result.Message = fmt.Sprintf("Failed to activate: %v", err)
+			result.Activation = activation
+			return result, nil
+		}
+		result.Activation = activation
+		if activation.Success {
+			result.Success = true
+			result.Message = "SRVB created and activated successfully"
+		} else {
+			result.Message = "Activation failed - check activation messages"
+		}
 		return result, nil
 
 	default:

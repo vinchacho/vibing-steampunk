@@ -31,8 +31,15 @@ PLATFORMS_DARWIN=darwin/amd64 darwin/arm64
 PLATFORMS_WINDOWS=windows/amd64 windows/arm64 windows/386
 PLATFORMS=$(PLATFORMS_LINUX) $(PLATFORMS_DARWIN) $(PLATFORMS_WINDOWS)
 
+# Common platforms (fast build)
+PLATFORMS_COMMON=linux/amd64 darwin/arm64 windows/amd64
+
+# Current platform detection
+CURRENT_OS=$(shell go env GOOS)
+CURRENT_ARCH=$(shell go env GOARCH)
+
 .PHONY: all build clean test lint fmt deps tidy help install run
-.PHONY: build-all build-linux build-darwin build-windows
+.PHONY: build-all build-all-all build-linux build-darwin build-windows
 .PHONY: deploy-windows
 
 all: deps lint test build
@@ -44,7 +51,23 @@ build: ## Build the binary for current platform
 	$(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) $(CMD_DIR)
 	@echo "Built: $(BUILD_DIR)/$(BINARY_NAME)"
 
-build-all: ## Build for all platforms (linux, darwin, windows - amd64, arm64, 386, arm)
+build-all: ## Build for common platforms (linux-amd64, darwin-arm64, windows-amd64) + local ./build/vsp
+	@mkdir -p $(BUILD_DIR)
+	@for platform in $(PLATFORMS_COMMON); do \
+		os=$${platform%/*}; \
+		arch=$${platform#*/}; \
+		output=$(BUILD_DIR)/$(BINARY_NAME)-$$os-$$arch; \
+		if [ "$$os" = "windows" ]; then output=$$output.exe; fi; \
+		echo "Building $$output..."; \
+		GOOS=$$os GOARCH=$$arch $(GOBUILD) $(LDFLAGS) -o $$output $(CMD_DIR) || exit 1; \
+	done
+	@echo "Copying current platform binary to $(BUILD_DIR)/$(BINARY_NAME)..."
+	@cp $(BUILD_DIR)/$(BINARY_NAME)-$(CURRENT_OS)-$(CURRENT_ARCH) $(BUILD_DIR)/$(BINARY_NAME) 2>/dev/null || \
+		$(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) $(CMD_DIR)
+	@echo "Build complete. Binaries in $(BUILD_DIR)/"
+	@ls -lh $(BUILD_DIR)/
+
+build-all-all: ## Build for ALL platforms (linux, darwin, windows - amd64, arm64, 386, arm)
 	@mkdir -p $(BUILD_DIR)
 	@for platform in $(PLATFORMS); do \
 		os=$${platform%/*}; \

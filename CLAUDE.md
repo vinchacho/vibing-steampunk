@@ -55,6 +55,12 @@ SAP_URL=http://host:50000 SAP_USER=user SAP_PASSWORD=pass ./vsp
 | `SAP_ALLOWED_OPS` / `--allowed-ops` | Whitelist operation types (e.g., "RSQ") |
 | `SAP_DISALLOWED_OPS` / `--disallowed-ops` | Blacklist operation types (e.g., "CDUA") |
 | `SAP_ALLOWED_PACKAGES` / `--allowed-packages` | Restrict to packages (supports wildcards: "Z*") |
+| **Feature Configuration (Safety Network)** | |
+| `SAP_FEATURE_ABAPGIT` / `--feature-abapgit` | abapGit integration: auto, on, off (default: auto) |
+| `SAP_FEATURE_RAP` / `--feature-rap` | RAP/OData development: auto, on, off (default: auto) |
+| `SAP_FEATURE_AMDP` / `--feature-amdp` | AMDP/HANA debugger: auto, on, off (default: auto) |
+| `SAP_FEATURE_UI5` / `--feature-ui5` | UI5/Fiori BSP management: auto, on, off (default: auto) |
+| `SAP_FEATURE_TRANSPORT` / `--feature-transport` | CTS transport management: auto, on, off (default: auto) |
 
 ## Codebase Structure
 
@@ -74,6 +80,7 @@ pkg/
 │   ├── cds.go                # CDS view dependency analysis
 │   ├── safety.go             # Safety & protection configuration
 │   ├── safety_test.go        # Safety unit tests (25 tests)
+│   ├── features.go           # Feature detection (safety network)
 │   ├── http.go               # HTTP transport (CSRF, sessions)
 │   ├── config.go             # Configuration
 │   ├── cookies.go            # Cookie file parsing (Netscape format)
@@ -308,6 +315,11 @@ All research reports, analysis documents, and design specifications follow this 
 - **001:** AMDP Breakpoint Investigation - Deep dive into ADT breakpoint API (parked)
 - **002:** AMDP Debugging Status & Progress Report - Current state, security audit, tool visibility update
 
+#### 2025-12-08 Reports
+- **001:** abapGit Integration Design - RAP OData service architecture for package export/deploy
+- **002:** abapGit Integration Progress - Status update, SAP objects created, parked issues
+- **003:** RAP OData Service Lessons - BDEF XML format, SRVB creation, OData V4 action URLs
+
 #### Reference Documentation (Non-numbered)
 - `abap-adt-discovery-guide.md` - ADT API discovery process
 - `adt-abap-internals-documentation.md` - Detailed ADT endpoint analysis
@@ -343,14 +355,15 @@ When creating a new report:
 
 | Metric | Value |
 |--------|-------|
-| **Tools** | 76 (42 focused, 76 expert) |
+| **Tools** | 77 (50 focused, 77 expert) |
 | **Unit Tests** | 270 |
 | **Integration Tests** | 34 |
 | **Platforms** | 9 |
 | **Phase** | 4 (Native ADT Features) - In Progress |
-| **Reports** | 23 numbered + 6 reference docs |
+| **Reports** | 26 numbered + 6 reference docs |
 | **Cache Package** | ✅ Complete (in-memory + SQLite) |
 | **Safety System** | ✅ Complete (operation filtering, package restrictions) |
+| **Feature Detection** | ✅ Complete (GetFeatures tool, auto/on/off for abapGit, RAP, AMDP, UI5, Transport) |
 | **DSL Package** | ✅ Complete (fluent API, YAML workflows, test orchestration, batch import/export) |
 | **Batch Import/Export** | ✅ Complete (v2.12 - abapGit-compatible format, priority ordering) |
 | **Pipeline Builder** | ✅ Complete (v2.12 - DeployPipeline, RAPPipeline, ExportPipeline) |
@@ -367,6 +380,7 @@ When creating a new report:
 | **UI5/BSP Mgmt** | ✅ Partial (Read ops work; Create needs alternate API) |
 | **Tool Groups** | ✅ Complete (--disabled-groups: 5/U, T, H, D, C) |
 | **Class Includes** | ✅ Complete (v2.12 - testclasses, locals_def, locals_imp, macros) |
+| **abapGit Integration** | ⚠️ Parked (RAP OData service built, handler issue - reports/2025-12-08-002) |
 
 ### DSL & Workflow Usage
 

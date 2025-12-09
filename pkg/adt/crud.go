@@ -186,6 +186,9 @@ type CreateObjectOptions struct {
 	BindingVersion string `json:"bindingVersion,omitempty"`
 	// For SRVB: category ("0" for Web API, "1" for UI)
 	BindingCategory string `json:"bindingCategory,omitempty"`
+
+	// For BDEF: source code (required for creation - ADT API embeds source in creation request)
+	Source string `json:"source,omitempty"`
 }
 
 // objectTypeInfo contains metadata for creating object types.
@@ -297,11 +300,17 @@ func (c *Client) CreateObject(ctx context.Context, opts CreateObjectOptions) err
 		params.Set("corrNr", opts.Transport)
 	}
 
+	// BDEF requires specific content type
+	contentType := "application/*"
+	if opts.ObjectType == ObjectTypeBDEF {
+		contentType = "application/vnd.sap.adt.blues.v1+xml"
+	}
+
 	_, err := c.transport.Request(ctx, creationURL, &RequestOptions{
 		Method:      http.MethodPost,
 		Query:       params,
 		Body:        []byte(body),
-		ContentType: "application/*",
+		ContentType: contentType,
 	})
 	if err != nil {
 		return fmt.Errorf("creating object: %w", err)
@@ -431,7 +440,26 @@ func buildCreateObjectBody(opts CreateObjectOptions, typeInfo objectTypeInfo, de
 			typeInfo.rootName)
 	}
 
-	// Standard object creation (DDLS, BDEF use standard body)
+	// For BDEF (Behavior Definition), use blue:blueSource as root element
+	// ADT API expects this specific format (discovered from existing BDEFs)
+	if opts.ObjectType == ObjectTypeBDEF {
+		// BDEF creation uses blue:blueSource as root, source is set separately via PUT
+		return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<blue:blueSource xmlns:blue="http://www.sap.com/wbobj/blue" xmlns:adtcore="http://www.sap.com/adt/core"
+  adtcore:description="%s"
+  adtcore:name="%s"
+  adtcore:type="%s"
+  adtcore:responsible="%s">
+  <adtcore:packageRef adtcore:name="%s"/>
+</blue:blueSource>`,
+			escapeXML(opts.Description),
+			opts.Name,
+			opts.ObjectType,
+			responsible,
+			opts.PackageName)
+	}
+
+	// Standard object creation (DDLS uses standard body)
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <%s %s xmlns:adtcore="http://www.sap.com/adt/core"
   adtcore:description="%s"

@@ -44,6 +44,8 @@ type Config struct {
 	Verbose bool
 	// Safety defines protection parameters to prevent unintended modifications
 	Safety SafetyConfig
+	// Features controls optional feature detection and enablement
+	Features FeatureConfig
 }
 
 // Option is a functional option for configuring the ADT client.
@@ -172,6 +174,7 @@ func NewConfig(baseURL, username, password string, opts ...Option) *Config {
 		SessionType: SessionStateful,
 		Timeout:     60 * time.Second,
 		Safety:      UnrestrictedSafetyConfig(), // Default: no restrictions for backwards compatibility
+		Features:    DefaultFeatureConfig(),     // Default: auto-detect all features
 	}
 
 	for _, opt := range opts {
@@ -179,6 +182,13 @@ func NewConfig(baseURL, username, password string, opts ...Option) *Config {
 	}
 
 	return cfg
+}
+
+// WithFeatures sets the feature configuration.
+func WithFeatures(features FeatureConfig) Option {
+	return func(c *Config) {
+		c.Features = features
+	}
 }
 
 // NewHTTPClient creates an http.Client configured for the given Config.

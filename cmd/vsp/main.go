@@ -83,6 +83,14 @@ func init() {
 	rootCmd.Flags().StringVar(&cfg.Mode, "mode", "focused", "Tool mode: focused (19 essential tools) or expert (all 45 tools)")
 	rootCmd.Flags().StringVar(&cfg.DisabledGroups, "disabled-groups", "", "Disable tool groups: 5/U=UI5, T=Tests, H=HANA, D=Debug (e.g., \"TH\" disables Tests and HANA)")
 
+	// Feature configuration (safety network)
+	// Values: "auto" (default), "on", "off"
+	rootCmd.Flags().StringVar(&cfg.FeatureAbapGit, "feature-abapgit", "auto", "abapGit integration: auto, on, off")
+	rootCmd.Flags().StringVar(&cfg.FeatureRAP, "feature-rap", "auto", "RAP/OData development: auto, on, off")
+	rootCmd.Flags().StringVar(&cfg.FeatureAMDP, "feature-amdp", "auto", "AMDP/HANA debugger: auto, on, off")
+	rootCmd.Flags().StringVar(&cfg.FeatureUI5, "feature-ui5", "auto", "UI5/Fiori BSP management: auto, on, off")
+	rootCmd.Flags().StringVar(&cfg.FeatureTransport, "feature-transport", "auto", "CTS transport management: auto, on, off")
+
 	// Output options
 	rootCmd.Flags().BoolVarP(&cfg.Verbose, "verbose", "v", false, "Enable verbose output to stderr")
 
@@ -107,6 +115,13 @@ func init() {
 	viper.BindPFlag("disabled-groups", rootCmd.Flags().Lookup("disabled-groups"))
 	viper.BindPFlag("verbose", rootCmd.Flags().Lookup("verbose"))
 
+	// Feature configuration
+	viper.BindPFlag("feature-abapgit", rootCmd.Flags().Lookup("feature-abapgit"))
+	viper.BindPFlag("feature-rap", rootCmd.Flags().Lookup("feature-rap"))
+	viper.BindPFlag("feature-amdp", rootCmd.Flags().Lookup("feature-amdp"))
+	viper.BindPFlag("feature-ui5", rootCmd.Flags().Lookup("feature-ui5"))
+	viper.BindPFlag("feature-transport", rootCmd.Flags().Lookup("feature-transport"))
+
 	// Set up environment variable mapping
 	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
 	viper.AutomaticEnv()
@@ -125,6 +140,11 @@ func runServer(cmd *cobra.Command, args []string) error {
 	// Process cookie authentication
 	if err := processCookieAuth(cmd); err != nil {
 		return err
+	}
+
+	// Set verbose log output for feature probing
+	if cfg.Verbose {
+		adt.SetLogOutput(os.Stderr)
 	}
 
 	if cfg.Verbose {
@@ -268,6 +288,33 @@ func resolveConfig(cmd *cobra.Command) {
 	if !cmd.Flags().Changed("allowed-transports") {
 		if transports := viper.GetStringSlice("ALLOWED_TRANSPORTS"); len(transports) > 0 {
 			cfg.AllowedTransports = transports
+		}
+	}
+
+	// Feature configuration: flag > SAP_FEATURE_* env
+	if !cmd.Flags().Changed("feature-abapgit") {
+		if v := viper.GetString("FEATURE_ABAPGIT"); v != "" {
+			cfg.FeatureAbapGit = v
+		}
+	}
+	if !cmd.Flags().Changed("feature-rap") {
+		if v := viper.GetString("FEATURE_RAP"); v != "" {
+			cfg.FeatureRAP = v
+		}
+	}
+	if !cmd.Flags().Changed("feature-amdp") {
+		if v := viper.GetString("FEATURE_AMDP"); v != "" {
+			cfg.FeatureAMDP = v
+		}
+	}
+	if !cmd.Flags().Changed("feature-ui5") {
+		if v := viper.GetString("FEATURE_UI5"); v != "" {
+			cfg.FeatureUI5 = v
+		}
+	}
+	if !cmd.Flags().Changed("feature-transport") {
+		if v := viper.GetString("FEATURE_TRANSPORT"); v != "" {
+			cfg.FeatureTransport = v
 		}
 	}
 }
