@@ -1,6 +1,6 @@
 "! <p class="shorttext synchronized">VSP Debug Domain Service</p>
-"! Provides debugging capabilities via WebSocket.
-"! Manages external breakpoints and debug session state.
+"! Provides full debugging capabilities via WebSocket.
+"! Integrates with SAP TPDAPI for real debugger operations.
 CLASS zcl_vsp_debug_service DEFINITION
   PUBLIC
   FINAL
@@ -29,9 +29,12 @@ CLASS zcl_vsp_debug_service DEFINITION
     DATA mt_breakpoints TYPE tt_breakpoints.
     DATA mv_attached_debuggee TYPE string.
 
-    " Class-level: active sessions
-    CLASS-DATA gt_sessions TYPE STANDARD TABLE OF REF TO zcl_vsp_debug_service WITH KEY table_line.
+    " Debugger service and session references
+    DATA mo_dbg_service TYPE REF TO if_tpdapi_service.
+    DATA mo_dbg_session TYPE REF TO if_tpdapi_session.
+    DATA mv_listener_active TYPE abap_bool.
 
+    " Breakpoint management
     METHODS handle_set_breakpoint
       IMPORTING is_message         TYPE zif_vsp_service=>ty_message
       RETURNING VALUE(rs_response) TYPE zif_vsp_service=>ty_response.
@@ -44,10 +47,40 @@ CLASS zcl_vsp_debug_service DEFINITION
       IMPORTING is_message         TYPE zif_vsp_service=>ty_message
       RETURNING VALUE(rs_response) TYPE zif_vsp_service=>ty_response.
 
+    " Debugging operations
+    METHODS handle_listen
+      IMPORTING is_message         TYPE zif_vsp_service=>ty_message
+      RETURNING VALUE(rs_response) TYPE zif_vsp_service=>ty_response.
+
+    METHODS handle_get_debuggees
+      IMPORTING is_message         TYPE zif_vsp_service=>ty_message
+      RETURNING VALUE(rs_response) TYPE zif_vsp_service=>ty_response.
+
+    METHODS handle_attach
+      IMPORTING is_message         TYPE zif_vsp_service=>ty_message
+      RETURNING VALUE(rs_response) TYPE zif_vsp_service=>ty_response.
+
+    METHODS handle_step
+      IMPORTING is_message         TYPE zif_vsp_service=>ty_message
+      RETURNING VALUE(rs_response) TYPE zif_vsp_service=>ty_response.
+
+    METHODS handle_get_stack
+      IMPORTING is_message         TYPE zif_vsp_service=>ty_message
+      RETURNING VALUE(rs_response) TYPE zif_vsp_service=>ty_response.
+
+    METHODS handle_get_variables
+      IMPORTING is_message         TYPE zif_vsp_service=>ty_message
+      RETURNING VALUE(rs_response) TYPE zif_vsp_service=>ty_response.
+
+    METHODS handle_detach
+      IMPORTING is_message         TYPE zif_vsp_service=>ty_message
+      RETURNING VALUE(rs_response) TYPE zif_vsp_service=>ty_response.
+
     METHODS handle_get_status
       IMPORTING is_message         TYPE zif_vsp_service=>ty_message
       RETURNING VALUE(rs_response) TYPE zif_vsp_service=>ty_response.
 
+    " Helper methods
     METHODS escape_json
       IMPORTING iv_string         TYPE string
       RETURNING VALUE(rv_escaped) TYPE string.
@@ -68,6 +101,9 @@ CLASS zcl_vsp_debug_service DEFINITION
                 iv_name         TYPE string
       RETURNING VALUE(rv_value) TYPE i.
 
+    METHODS get_debugger_service
+      RETURNING VALUE(ro_service) TYPE REF TO if_tpdapi_service.
+
 ENDCLASS.
 
 
@@ -85,27 +121,570 @@ CLASS zcl_vsp_debug_service IMPLEMENTATION.
     ENDIF.
 
     CASE is_message-action.
+      " Breakpoint management
       WHEN 'setBreakpoint'.
         rs_response = handle_set_breakpoint( is_message ).
       WHEN 'getBreakpoints'.
         rs_response = handle_get_breakpoints( is_message ).
       WHEN 'deleteBreakpoint'.
         rs_response = handle_delete_breakpoint( is_message ).
+
+      " Debugging operations
+      WHEN 'listen'.
+        rs_response = handle_listen( is_message ).
+      WHEN 'getDebuggees'.
+        rs_response = handle_get_debuggees( is_message ).
+      WHEN 'attach'.
+        rs_response = handle_attach( is_message ).
+      WHEN 'step'.
+        rs_response = handle_step( is_message ).
+      WHEN 'getStack'.
+        rs_response = handle_get_stack( is_message ).
+      WHEN 'getVariables'.
+        rs_response = handle_get_variables( is_message ).
+      WHEN 'detach'.
+        rs_response = handle_detach( is_message ).
+
+      " Status
       WHEN 'getStatus'.
         rs_response = handle_get_status( is_message ).
+
       WHEN OTHERS.
         rs_response = error_response(
           iv_id      = is_message-id
           iv_code    = 'UNKNOWN_ACTION'
-          iv_message = |Action '{ is_message-action }' not supported. Available: setBreakpoint, getBreakpoints, deleteBreakpoint, getStatus|
+          iv_message = |Action '{ is_message-action }' not supported. | &&
+                       |Available: setBreakpoint, getBreakpoints, deleteBreakpoint, | &&
+                       |listen, getDebuggees, attach, step, getStack, getVariables, detach, getStatus|
         ).
     ENDCASE.
   ENDMETHOD.
 
 
   METHOD zif_vsp_service~on_disconnect.
-    " Clean up session state
-    CLEAR: mv_attached_debuggee, mt_breakpoints.
+    " Clean up - detach from debugger if attached
+    IF mo_dbg_session IS NOT INITIAL.
+      TRY.
+          mo_dbg_session->get_control_services( )->end_debugger( ).
+        CATCH cx_tpdapi_failure cx_root ##NO_HANDLER.
+      ENDTRY.
+    ENDIF.
+
+    " Stop listener if active
+    IF mv_listener_active = abap_true AND mo_dbg_service IS NOT INITIAL.
+      TRY.
+          mo_dbg_service->stop_listener_for_user(
+            i_request_user = mv_debug_user
+            i_ide_user     = mv_debug_user ).
+        CATCH cx_tpdapi_failure cx_root ##NO_HANDLER.
+      ENDTRY.
+    ENDIF.
+
+    CLEAR: mv_attached_debuggee, mt_breakpoints, mo_dbg_session, mv_listener_active.
+  ENDMETHOD.
+
+
+  METHOD get_debugger_service.
+    IF mo_dbg_service IS INITIAL.
+      mo_dbg_service = cl_tpdapi_service=>s_get_instance( ).
+    ENDIF.
+    ro_service = mo_dbg_service.
+  ENDMETHOD.
+
+
+  METHOD handle_listen.
+    DATA(lv_brace_open) = '{'.
+    DATA(lv_brace_close) = '}'.
+    DATA lv_timeout TYPE i.
+    DATA lv_user TYPE syuname.
+
+    " Extract parameters
+    lv_timeout = extract_param_int( iv_params = is_message-params iv_name = 'timeout' ).
+    IF lv_timeout <= 0.
+      lv_timeout = 60. " Default 60 seconds
+    ENDIF.
+    IF lv_timeout > 240.
+      lv_timeout = 240. " Max 240 seconds
+    ENDIF.
+
+    lv_user = extract_param( iv_params = is_message-params iv_name = 'user' ).
+    IF lv_user IS INITIAL.
+      lv_user = mv_debug_user.
+    ENDIF.
+
+    " Check if debugging is available
+    IF cl_tpdapi_service=>is_debugging_available( ) IS INITIAL.
+      rs_response = error_response(
+        iv_id      = is_message-id
+        iv_code    = 'DEBUG_NOT_AVAILABLE'
+        iv_message = 'Debugging is not available on this system'
+      ).
+      RETURN.
+    ENDIF.
+
+    TRY.
+        DATA(lo_service) = get_debugger_service( ).
+
+        " Activate session for external debugging
+        lo_service->activate_session_for_ext_debug(
+          i_ide_user = mv_debug_user ).
+
+        " Start listener
+        mv_listener_active = abap_true.
+        lo_service->start_listener_for_user(
+          i_request_user = lv_user
+          i_ide_user     = mv_debug_user
+          i_timeout      = lv_timeout ).
+
+        " Listener returned - check for waiting debuggees
+        DATA(lt_debuggees) = lo_service->get_waiting_debuggees(
+          i_request_user = lv_user
+          i_ide_user     = mv_debug_user ).
+
+        mv_listener_active = abap_false.
+
+        IF lt_debuggees IS INITIAL.
+          rs_response = VALUE #(
+            id      = is_message-id
+            success = abap_true
+            data    = |{ lv_brace_open }"status":"timeout","debuggees":[]{ lv_brace_close }|
+          ).
+        ELSE.
+          " Build debuggees JSON array
+          DATA lv_json TYPE string.
+          DATA lv_first TYPE abap_bool VALUE abap_true.
+          lv_json = '['.
+
+          LOOP AT lt_debuggees INTO DATA(ls_debuggee).
+            IF lv_first = abap_false.
+              lv_json = |{ lv_json },|.
+            ENDIF.
+            lv_first = abap_false.
+
+            lv_json = |{ lv_json }{ lv_brace_open }| &&
+                      |"id":"{ ls_debuggee-debuggee }",| &&
+                      |"host":"{ escape_json( ls_debuggee-host ) }",| &&
+                      |"user":"{ ls_debuggee-debuggee_user }",| &&
+                      |"program":"{ escape_json( ls_debuggee-progname ) }",| &&
+                      |"sameServer":{ COND #( WHEN ls_debuggee-is_same_server IS NOT INITIAL THEN 'true' ELSE 'false' ) }| &&
+                      |{ lv_brace_close }|.
+          ENDLOOP.
+
+          lv_json = |{ lv_json }]|.
+
+          rs_response = VALUE #(
+            id      = is_message-id
+            success = abap_true
+            data    = |{ lv_brace_open }"status":"caught","debuggees":{ lv_json }{ lv_brace_close }|
+          ).
+        ENDIF.
+
+      CATCH cx_abdbg_actext_lis_timeout.
+        mv_listener_active = abap_false.
+        rs_response = VALUE #(
+          id      = is_message-id
+          success = abap_true
+          data    = |{ lv_brace_open }"status":"timeout","debuggees":[]{ lv_brace_close }|
+        ).
+
+      CATCH cx_abdbg_actext_conflict_lis INTO DATA(lx_conflict).
+        mv_listener_active = abap_false.
+        rs_response = error_response(
+          iv_id      = is_message-id
+          iv_code    = 'LISTENER_CONFLICT'
+          iv_message = |Another listener is already active: { lx_conflict->get_text( ) }|
+        ).
+
+      CATCH cx_tpdapi_failure cx_root INTO DATA(lx_error).
+        mv_listener_active = abap_false.
+        rs_response = error_response(
+          iv_id      = is_message-id
+          iv_code    = 'LISTEN_FAILED'
+          iv_message = lx_error->get_text( )
+        ).
+    ENDTRY.
+  ENDMETHOD.
+
+
+  METHOD handle_get_debuggees.
+    DATA(lv_brace_open) = '{'.
+    DATA(lv_brace_close) = '}'.
+    DATA lv_user TYPE syuname.
+
+    lv_user = extract_param( iv_params = is_message-params iv_name = 'user' ).
+    IF lv_user IS INITIAL.
+      lv_user = mv_debug_user.
+    ENDIF.
+
+    TRY.
+        DATA(lo_service) = get_debugger_service( ).
+        DATA(lt_debuggees) = lo_service->get_waiting_debuggees(
+          i_request_user = lv_user
+          i_ide_user     = mv_debug_user ).
+
+        " Build JSON array
+        DATA lv_json TYPE string.
+        DATA lv_first TYPE abap_bool VALUE abap_true.
+        lv_json = '['.
+
+        LOOP AT lt_debuggees INTO DATA(ls_debuggee).
+          IF lv_first = abap_false.
+            lv_json = |{ lv_json },|.
+          ENDIF.
+          lv_first = abap_false.
+
+          lv_json = |{ lv_json }{ lv_brace_open }| &&
+                    |"id":"{ ls_debuggee-debuggee }",| &&
+                    |"host":"{ escape_json( ls_debuggee-host ) }",| &&
+                    |"user":"{ ls_debuggee-debuggee_user }",| &&
+                    |"program":"{ escape_json( ls_debuggee-progname ) }"| &&
+                    |{ lv_brace_close }|.
+        ENDLOOP.
+
+        lv_json = |{ lv_json }]|.
+
+        rs_response = VALUE #(
+          id      = is_message-id
+          success = abap_true
+          data    = |{ lv_brace_open }"debuggees":{ lv_json }{ lv_brace_close }|
+        ).
+
+      CATCH cx_tpdapi_failure cx_root INTO DATA(lx_error).
+        rs_response = error_response(
+          iv_id      = is_message-id
+          iv_code    = 'GET_DEBUGGEES_FAILED'
+          iv_message = lx_error->get_text( )
+        ).
+    ENDTRY.
+  ENDMETHOD.
+
+
+  METHOD handle_attach.
+    DATA(lv_brace_open) = '{'.
+    DATA(lv_brace_close) = '}'.
+    DATA lv_debuggee_id TYPE string.
+
+    lv_debuggee_id = extract_param( iv_params = is_message-params iv_name = 'debuggeeId' ).
+    IF lv_debuggee_id IS INITIAL.
+      rs_response = error_response(
+        iv_id      = is_message-id
+        iv_code    = 'INVALID_PARAMS'
+        iv_message = 'debuggeeId parameter required'
+      ).
+      RETURN.
+    ENDIF.
+
+    " Check if already attached
+    IF mo_dbg_session IS NOT INITIAL.
+      rs_response = error_response(
+        iv_id      = is_message-id
+        iv_code    = 'ALREADY_ATTACHED'
+        iv_message = |Already attached to debuggee { mv_attached_debuggee }. Detach first.|
+      ).
+      RETURN.
+    ENDIF.
+
+    TRY.
+        DATA(lo_service) = get_debugger_service( ).
+
+        " Attach to debuggee
+        mo_dbg_session = lo_service->attach_debuggee( i_debuggee_id = CONV #( lv_debuggee_id ) ).
+        mv_attached_debuggee = lv_debuggee_id.
+
+        " Get initial state
+        DATA(lo_stack_handler) = mo_dbg_session->get_stack_handler( ).
+        DATA(lt_stack) = lo_stack_handler->get_stack( ).
+
+        " Get current position from top of stack
+        DATA lv_program TYPE string.
+        DATA lv_include TYPE string.
+        DATA lv_line TYPE i.
+
+        READ TABLE lt_stack INTO DATA(ls_stack) WITH KEY flg_active = abap_true.
+        IF sy-subrc = 0.
+          lv_program = ls_stack-program.
+          lv_include = ls_stack-include.
+          lv_line = ls_stack-line.
+        ENDIF.
+
+        rs_response = VALUE #(
+          id      = is_message-id
+          success = abap_true
+          data    = |{ lv_brace_open }"attached":true,"debuggeeId":"{ escape_json( lv_debuggee_id ) }",| &&
+                    |"program":"{ escape_json( lv_program ) }",| &&
+                    |"include":"{ escape_json( lv_include ) }",| &&
+                    |"line":{ lv_line }{ lv_brace_close }|
+        ).
+
+      CATCH cx_tpdapi_failure cx_root INTO DATA(lx_error).
+        CLEAR: mo_dbg_session, mv_attached_debuggee.
+        rs_response = error_response(
+          iv_id      = is_message-id
+          iv_code    = 'ATTACH_FAILED'
+          iv_message = lx_error->get_text( )
+        ).
+    ENDTRY.
+  ENDMETHOD.
+
+
+  METHOD handle_step.
+    DATA(lv_brace_open) = '{'.
+    DATA(lv_brace_close) = '}'.
+    DATA lv_step_type TYPE string.
+
+    " Check if attached
+    IF mo_dbg_session IS INITIAL.
+      rs_response = error_response(
+        iv_id      = is_message-id
+        iv_code    = 'NOT_ATTACHED'
+        iv_message = 'Not attached to any debuggee. Use attach first.'
+      ).
+      RETURN.
+    ENDIF.
+
+    lv_step_type = extract_param( iv_params = is_message-params iv_name = 'type' ).
+    IF lv_step_type IS INITIAL.
+      lv_step_type = 'into'. " Default
+    ENDIF.
+
+    TRY.
+        DATA(lo_control) = mo_dbg_session->get_control_services( ).
+        DATA lo_steptype TYPE REF TO ie_tpdapi_steptype.
+
+        " Map step type string to TPDAPI step type
+        CASE lv_step_type.
+          WHEN 'into'.
+            lo_steptype = ce_tpdapi_steptype=>step_into.
+          WHEN 'over'.
+            lo_steptype = ce_tpdapi_steptype=>step_over.
+          WHEN 'return'.
+            lo_steptype = ce_tpdapi_steptype=>step_return.
+          WHEN 'continue'.
+            lo_steptype = ce_tpdapi_steptype=>continue.
+          WHEN OTHERS.
+            rs_response = error_response(
+              iv_id      = is_message-id
+              iv_code    = 'INVALID_STEP_TYPE'
+              iv_message = |Invalid step type '{ lv_step_type }'. Use: into, over, return, continue|
+            ).
+            RETURN.
+        ENDCASE.
+
+        " Execute step
+        lo_control->debug_step( i_ref_steptype = lo_steptype ).
+
+        " Get new position
+        DATA(lo_stack_handler) = mo_dbg_session->get_stack_handler( ).
+        DATA(lt_stack) = lo_stack_handler->get_stack( ).
+
+        DATA lv_program TYPE string.
+        DATA lv_include TYPE string.
+        DATA lv_line TYPE i.
+        DATA lv_procname TYPE string.
+
+        READ TABLE lt_stack INTO DATA(ls_stack) WITH KEY flg_active = abap_true.
+        IF sy-subrc = 0.
+          lv_program = ls_stack-program.
+          lv_include = ls_stack-include.
+          lv_line = ls_stack-line.
+          lv_procname = ls_stack-procname.
+        ENDIF.
+
+        rs_response = VALUE #(
+          id      = is_message-id
+          success = abap_true
+          data    = |{ lv_brace_open }"stepped":"{ lv_step_type }",| &&
+                    |"program":"{ escape_json( lv_program ) }",| &&
+                    |"include":"{ escape_json( lv_include ) }",| &&
+                    |"line":{ lv_line },| &&
+                    |"procedure":"{ escape_json( lv_procname ) }"{ lv_brace_close }|
+        ).
+
+      CATCH cx_tpdapi_debuggee_ended.
+        CLEAR: mo_dbg_session, mv_attached_debuggee.
+        rs_response = VALUE #(
+          id      = is_message-id
+          success = abap_true
+          data    = |{ lv_brace_open }"stepped":"{ lv_step_type }","ended":true,"message":"Debuggee ended"{ lv_brace_close }|
+        ).
+
+      CATCH cx_tpdapi_failure cx_root INTO DATA(lx_error).
+        rs_response = error_response(
+          iv_id      = is_message-id
+          iv_code    = 'STEP_FAILED'
+          iv_message = lx_error->get_text( )
+        ).
+    ENDTRY.
+  ENDMETHOD.
+
+
+  METHOD handle_get_stack.
+    DATA(lv_brace_open) = '{'.
+    DATA(lv_brace_close) = '}'.
+
+    IF mo_dbg_session IS INITIAL.
+      rs_response = error_response(
+        iv_id      = is_message-id
+        iv_code    = 'NOT_ATTACHED'
+        iv_message = 'Not attached to any debuggee'
+      ).
+      RETURN.
+    ENDIF.
+
+    TRY.
+        DATA(lo_stack_handler) = mo_dbg_session->get_stack_handler( ).
+        DATA(lt_stack) = lo_stack_handler->get_stack( ).
+
+        " Build JSON array
+        DATA lv_json TYPE string.
+        DATA lv_first TYPE abap_bool VALUE abap_true.
+        DATA lv_idx TYPE i.
+        lv_json = '['.
+
+        LOOP AT lt_stack INTO DATA(ls_frame).
+          lv_idx = sy-tabix - 1.
+          IF lv_first = abap_false.
+            lv_json = |{ lv_json },|.
+          ENDIF.
+          lv_first = abap_false.
+
+          lv_json = |{ lv_json }{ lv_brace_open }| &&
+                    |"index":{ lv_idx },| &&
+                    |"program":"{ escape_json( ls_frame-program ) }",| &&
+                    |"include":"{ escape_json( ls_frame-include ) }",| &&
+                    |"line":{ ls_frame-line },| &&
+                    |"procedure":"{ escape_json( ls_frame-procname ) }",| &&
+                    |"active":{ COND #( WHEN ls_frame-flg_active IS NOT INITIAL THEN 'true' ELSE 'false' ) },| &&
+                    |"system":{ COND #( WHEN ls_frame-flg_sysprog IS NOT INITIAL THEN 'true' ELSE 'false' ) }| &&
+                    |{ lv_brace_close }|.
+        ENDLOOP.
+
+        lv_json = |{ lv_json }]|.
+
+        rs_response = VALUE #(
+          id      = is_message-id
+          success = abap_true
+          data    = |{ lv_brace_open }"stack":{ lv_json }{ lv_brace_close }|
+        ).
+
+      CATCH cx_tpdapi_failure cx_root INTO DATA(lx_error).
+        rs_response = error_response(
+          iv_id      = is_message-id
+          iv_code    = 'GET_STACK_FAILED'
+          iv_message = lx_error->get_text( )
+        ).
+    ENDTRY.
+  ENDMETHOD.
+
+
+  METHOD handle_get_variables.
+    DATA(lv_brace_open) = '{'.
+    DATA(lv_brace_close) = '}'.
+    DATA lv_scope TYPE string.
+
+    IF mo_dbg_session IS INITIAL.
+      rs_response = error_response(
+        iv_id      = is_message-id
+        iv_code    = 'NOT_ATTACHED'
+        iv_message = 'Not attached to any debuggee'
+      ).
+      RETURN.
+    ENDIF.
+
+    lv_scope = extract_param( iv_params = is_message-params iv_name = 'scope' ).
+    IF lv_scope IS INITIAL.
+      lv_scope = 'locals'. " Default to local variables
+    ENDIF.
+
+    TRY.
+        DATA(lo_data_services) = mo_dbg_session->get_data_services( ).
+
+        " Get variable list based on scope
+        DATA lv_json TYPE string.
+        DATA lv_first TYPE abap_bool VALUE abap_true.
+        lv_json = '['.
+
+        " Get system variables (SY-*)
+        IF lv_scope = 'system' OR lv_scope = 'all'.
+          DATA(lt_sy_vars) = VALUE string_table(
+            ( `SY-SUBRC` ) ( `SY-TABIX` ) ( `SY-INDEX` ) ( `SY-DBCNT` )
+            ( `SY-UNAME` ) ( `SY-DATUM` ) ( `SY-UZEIT` ) ( `SY-CPROG` )
+          ).
+
+          LOOP AT lt_sy_vars INTO DATA(lv_var_name).
+            TRY.
+                DATA(lo_data) = lo_data_services->get_data( i_name = lv_var_name ).
+                DATA(lv_value) = lo_data->get_quickinfo( ).
+
+                IF lv_first = abap_false.
+                  lv_json = |{ lv_json },|.
+                ENDIF.
+                lv_first = abap_false.
+
+                lv_json = |{ lv_json }{ lv_brace_open }| &&
+                          |"name":"{ escape_json( lv_var_name ) }",| &&
+                          |"value":"{ escape_json( lv_value ) }",| &&
+                          |"scope":"system"{ lv_brace_close }|.
+
+              CATCH cx_tpdapi_failure cx_root ##NO_HANDLER.
+            ENDTRY.
+          ENDLOOP.
+        ENDIF.
+
+        lv_json = |{ lv_json }]|.
+
+        rs_response = VALUE #(
+          id      = is_message-id
+          success = abap_true
+          data    = |{ lv_brace_open }"variables":{ lv_json },"scope":"{ lv_scope }",| &&
+                    |"note":"Use specific variable names for detailed inspection"{ lv_brace_close }|
+        ).
+
+      CATCH cx_tpdapi_failure cx_root INTO DATA(lx_error).
+        rs_response = error_response(
+          iv_id      = is_message-id
+          iv_code    = 'GET_VARIABLES_FAILED'
+          iv_message = lx_error->get_text( )
+        ).
+    ENDTRY.
+  ENDMETHOD.
+
+
+  METHOD handle_detach.
+    DATA(lv_brace_open) = '{'.
+    DATA(lv_brace_close) = '}'.
+
+    IF mo_dbg_session IS INITIAL.
+      rs_response = VALUE #(
+        id      = is_message-id
+        success = abap_true
+        data    = |{ lv_brace_open }"detached":true,"message":"No active debug session"{ lv_brace_close }|
+      ).
+      RETURN.
+    ENDIF.
+
+    TRY.
+        DATA(lo_control) = mo_dbg_session->get_control_services( ).
+        lo_control->end_debugger( ).
+
+        DATA(lv_prev_debuggee) = mv_attached_debuggee.
+        CLEAR: mo_dbg_session, mv_attached_debuggee.
+
+        rs_response = VALUE #(
+          id      = is_message-id
+          success = abap_true
+          data    = |{ lv_brace_open }"detached":true,"debuggeeId":"{ escape_json( lv_prev_debuggee ) }"{ lv_brace_close }|
+        ).
+
+      CATCH cx_tpdapi_failure cx_root INTO DATA(lx_error).
+        " Still clear the session even if detach fails
+        CLEAR: mo_dbg_session, mv_attached_debuggee.
+        rs_response = VALUE #(
+          id      = is_message-id
+          success = abap_true
+          data    = |{ lv_brace_open }"detached":true,"warning":"{ escape_json( lx_error->get_text( ) ) }"{ lv_brace_close }|
+        ).
+    ENDTRY.
   ENDMETHOD.
 
 
@@ -167,7 +746,7 @@ CLASS zcl_vsp_debug_service IMPLEMENTATION.
         RETURN.
     ENDCASE.
 
-    " For now, store locally only (internal HTTP calls to ADT may require auth)
+    " Generate breakpoint ID
     DATA lv_bp_id TYPE string.
     DATA lv_uuid TYPE sysuuid_c32.
     TRY.
@@ -199,7 +778,7 @@ CLASS zcl_vsp_debug_service IMPLEMENTATION.
                 COND #( WHEN lv_uri IS NOT INITIAL THEN |,"uri":"{ escape_json( lv_uri ) }","line":{ lv_line }| ELSE '' ) &&
                 COND #( WHEN lv_exception IS NOT INITIAL THEN |,"exception":"{ escape_json( lv_exception ) }"| ELSE '' ) &&
                 COND #( WHEN lv_statement IS NOT INITIAL THEN |,"statement":"{ escape_json( lv_statement ) }"| ELSE '' ) &&
-                |,"note":"Stored in session. Use vsp SetExternalBreakpoint for persistent breakpoints."{ lv_brace_close }|
+                |{ lv_brace_close }|
     ).
   ENDMETHOD.
 
@@ -210,7 +789,6 @@ CLASS zcl_vsp_debug_service IMPLEMENTATION.
     DATA(lv_bracket_open) = '['.
     DATA(lv_bracket_close) = ']'.
 
-    " Return locally stored breakpoints
     DATA lv_json TYPE string.
     DATA lv_first TYPE abap_bool VALUE abap_true.
 
@@ -240,7 +818,7 @@ CLASS zcl_vsp_debug_service IMPLEMENTATION.
     rs_response = VALUE #(
       id      = is_message-id
       success = abap_true
-      data    = |{ lv_brace_open }"breakpoints":{ lv_json },"note":"Session breakpoints only. Use vsp GetExternalBreakpoints for persistent breakpoints."{ lv_brace_close }|
+      data    = |{ lv_brace_open }"breakpoints":{ lv_json }{ lv_brace_close }|
     ).
   ENDMETHOD.
 
@@ -258,18 +836,16 @@ CLASS zcl_vsp_debug_service IMPLEMENTATION.
       RETURN.
     ENDIF.
 
-    " Check if exists
     READ TABLE mt_breakpoints WITH KEY id = lv_bp_id TRANSPORTING NO FIELDS.
     IF sy-subrc <> 0.
       rs_response = error_response(
         iv_id = is_message-id
         iv_code = 'NOT_FOUND'
-        iv_message = |Breakpoint { lv_bp_id } not found in session|
+        iv_message = |Breakpoint { lv_bp_id } not found|
       ).
       RETURN.
     ENDIF.
 
-    " Remove from local state
     DELETE mt_breakpoints WHERE id = lv_bp_id.
 
     DATA(lv_brace_open) = '{'.
@@ -287,19 +863,29 @@ CLASS zcl_vsp_debug_service IMPLEMENTATION.
     DATA(lv_brace_close) = '}'.
 
     DATA lv_bp_count TYPE i.
+    DATA lv_attached TYPE string.
+    DATA lv_listener TYPE string.
+
     lv_bp_count = lines( mt_breakpoints ).
+    lv_attached = COND #( WHEN mo_dbg_session IS NOT INITIAL THEN 'true' ELSE 'false' ).
+    lv_listener = COND #( WHEN mv_listener_active = abap_true THEN 'true' ELSE 'false' ).
 
     rs_response = VALUE #(
       id      = is_message-id
       success = abap_true
-      data    = |{ lv_brace_open }"sessionId":"{ mv_session_id }","user":"{ mv_debug_user }",| &&
-                |"breakpointCount":{ lv_bp_count },"attachedDebuggee":"{ mv_attached_debuggee }"{ lv_brace_close }|
+      data    = |{ lv_brace_open }"sessionId":"{ mv_session_id }",| &&
+                |"user":"{ mv_debug_user }",| &&
+                |"breakpointCount":{ lv_bp_count },| &&
+                |"attached":{ lv_attached },| &&
+                |"attachedDebuggee":"{ escape_json( mv_attached_debuggee ) }",| &&
+                |"listenerActive":{ lv_listener },| &&
+                |"debuggingAvailable":{ COND #( WHEN cl_tpdapi_service=>is_debugging_available( ) IS NOT INITIAL THEN 'true' ELSE 'false' ) }| &&
+                |{ lv_brace_close }|
     ).
   ENDMETHOD.
 
 
   METHOD extract_param.
-    " Extract string parameter from JSON params
     DATA lv_pattern TYPE string.
     lv_pattern = |"{ iv_name }"\\s*:\\s*"([^"]*)"|.
     FIND REGEX lv_pattern IN iv_params SUBMATCHES rv_value.
@@ -307,7 +893,6 @@ CLASS zcl_vsp_debug_service IMPLEMENTATION.
 
 
   METHOD extract_param_int.
-    " Extract integer parameter from JSON params
     DATA lv_pattern TYPE string.
     DATA lv_str TYPE string.
     lv_pattern = |"{ iv_name }"\\s*:\\s*(\\d+)|.

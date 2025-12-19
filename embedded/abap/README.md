@@ -84,10 +84,51 @@ Once deployed, the WebSocket endpoint provides:
 - `getMetadata` - Get function signatures
 
 **Debug Domain** (`domain: "debug"`):
+
+*Breakpoint Management:*
 - `setBreakpoint` - Set session breakpoint (line, exception, statement)
 - `getBreakpoints` - List session breakpoints
 - `deleteBreakpoint` - Remove a breakpoint
-- `getStatus` - Get debug session status
+
+*Full Debugging (TPDAPI Integration):*
+- `listen` - Start debug listener, wait for debuggee (blocking, with timeout)
+- `getDebuggees` - List waiting debuggees
+- `attach` - Attach to a caught debuggee
+- `step` - Step operations: `into`, `over`, `return`, `continue`
+- `getStack` - Get current call stack
+- `getVariables` - Get variable values (system scope)
+- `detach` - Detach from debuggee
+
+*Status:*
+- `getStatus` - Get debug session status (attached, listener active, etc.)
+
+### Debug Flow Example
+
+```json
+// 1. Start listener (blocking call)
+{"id":"1","domain":"debug","action":"listen","params":{"timeout":60}}
+// Response: {"status":"caught","debuggees":[{"id":"...","program":"ZTEST"}]}
+
+// 2. Attach to debuggee
+{"id":"2","domain":"debug","action":"attach","params":{"debuggeeId":"..."}}
+// Response: {"attached":true,"program":"ZTEST","line":10}
+
+// 3. Step through code
+{"id":"3","domain":"debug","action":"step","params":{"type":"over"}}
+// Response: {"stepped":"over","program":"ZTEST","line":11}
+
+// 4. Get stack
+{"id":"4","domain":"debug","action":"getStack"}
+// Response: {"stack":[{"index":0,"program":"ZTEST","line":11,"active":true}]}
+
+// 5. Get variables
+{"id":"5","domain":"debug","action":"getVariables","params":{"scope":"system"}}
+// Response: {"variables":[{"name":"SY-SUBRC","value":"0"}]}
+
+// 6. Detach
+{"id":"6","domain":"debug","action":"detach"}
+// Response: {"detached":true}
+```
 
 See `reports/2025-12-18-002-websocket-rfc-handler.md` for full RFC documentation.
 

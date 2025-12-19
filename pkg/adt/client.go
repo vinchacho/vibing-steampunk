@@ -1230,8 +1230,26 @@ func (c *Client) GetDumps(ctx context.Context, opts *DumpQueryOptions) ([]Runtim
 }
 
 // GetDump retrieves full details of a specific runtime error.
+// dumpID can be either a full URI path (from GetDumps) or just the dump identifier.
 func (c *Client) GetDump(ctx context.Context, dumpID string) (*DumpDetails, error) {
-	endpoint := fmt.Sprintf("/sap/bc/adt/runtime/dumps/%s", dumpID)
+	var endpoint string
+	// GetDumps returns IDs like /sap/bc/adt/vit/runtime/dumps/{id}
+	// But the detail endpoint is /sap/bc/adt/runtime/dump/{id} (singular, no vit)
+	if strings.Contains(dumpID, "/runtime/dumps/") {
+		// Extract ID from full path and use correct endpoint
+		parts := strings.Split(dumpID, "/runtime/dumps/")
+		if len(parts) == 2 {
+			endpoint = fmt.Sprintf("/sap/bc/adt/runtime/dump/%s", parts[1])
+		} else {
+			endpoint = fmt.Sprintf("/sap/bc/adt/runtime/dump/%s", dumpID)
+		}
+	} else if strings.HasPrefix(dumpID, "/sap/bc/adt/runtime/dump/") {
+		// Already correct path
+		endpoint = dumpID
+	} else {
+		// Just the ID - construct path
+		endpoint = fmt.Sprintf("/sap/bc/adt/runtime/dump/%s", dumpID)
+	}
 
 	resp, err := c.transport.Request(ctx, endpoint, &RequestOptions{
 		Method: http.MethodGet,
