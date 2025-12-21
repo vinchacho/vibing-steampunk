@@ -190,8 +190,7 @@ func (s *Server) registerTools(mode string, disabledGroups string) {
 			"AMDPDebuggerStart", "AMDPDebuggerResume", "AMDPDebuggerStop",
 			"AMDPDebuggerStep", "AMDPGetVariables", "AMDPSetBreakpoint", "AMDPGetBreakpoints",
 		},
-		"D": { // ABAP debugger (external breakpoints + session)
-			"SetExternalBreakpoint", "GetExternalBreakpoints", "DeleteExternalBreakpoint",
+		"D": { // ABAP debugger (session tools - breakpoints via WebSocket ZADT_VSP)
 			"DebuggerListen", "DebuggerAttach", "DebuggerDetach",
 			"DebuggerStep", "DebuggerGetStack", "DebuggerGetVariables",
 		},
@@ -276,10 +275,8 @@ func (s *Server) registerTools(mode string, disabledGroups string) {
 		"GetSQLTraceState": true, // Check if SQL trace is active
 		"ListSQLTraces":    true, // List SQL trace files
 
-		// External Breakpoints (3)
-		"SetExternalBreakpoint":    true, // Set external breakpoint
-		"GetExternalBreakpoints":   true, // Get external breakpoints
-		"DeleteExternalBreakpoint": true, // Delete external breakpoint
+		// External Breakpoints - REMOVED (REST API returns 403 CSRF)
+		// Use WebSocket debug domain (ZADT_VSP) for breakpoint management instead.
 
 		// Debugger Session (6)
 		"DebuggerListen":       true, // Wait for debuggee to hit breakpoint
@@ -586,6 +583,89 @@ func (s *Server) registerTools(mode string, disabledGroups string) {
 		), s.handleGetObjectStructure)
 	}
 
+	// GetCallersOf - simplified up traversal
+	if shouldRegister("GetCallersOf") {
+		s.mcpServer.AddTool(mcp.NewTool("GetCallersOf",
+			mcp.WithDescription("Find all callers of an ABAP object (up traversal). Shows who calls this method/function. Simplified wrapper around GetCallGraph."),
+			mcp.WithString("object_uri",
+				mcp.Required(),
+				mcp.Description("ADT URI of the object (e.g., /sap/bc/adt/oo/classes/ZCL_TEST/source/main#start=10,1)"),
+			),
+			mcp.WithNumber("max_depth",
+				mcp.Description("Maximum depth of caller hierarchy (default: 5)"),
+			),
+		), s.handleGetCallersOf)
+	}
+
+	// GetCalleesOf - simplified down traversal
+	if shouldRegister("GetCalleesOf") {
+		s.mcpServer.AddTool(mcp.NewTool("GetCalleesOf",
+			mcp.WithDescription("Find all callees of an ABAP object (down traversal). Shows what this method/function calls. Simplified wrapper around GetCallGraph."),
+			mcp.WithString("object_uri",
+				mcp.Required(),
+				mcp.Description("ADT URI of the object (e.g., /sap/bc/adt/oo/classes/ZCL_TEST/source/main#start=10,1)"),
+			),
+			mcp.WithNumber("max_depth",
+				mcp.Description("Maximum depth of callee hierarchy (default: 5)"),
+			),
+		), s.handleGetCalleesOf)
+	}
+
+	// AnalyzeCallGraph - get call graph statistics
+	if shouldRegister("AnalyzeCallGraph") {
+		s.mcpServer.AddTool(mcp.NewTool("AnalyzeCallGraph",
+			mcp.WithDescription("Analyze call graph for an object. Returns statistics: total nodes, edges, max depth, nodes by type. Use for understanding code complexity and dependencies."),
+			mcp.WithString("object_uri",
+				mcp.Required(),
+				mcp.Description("ADT URI of the object to analyze"),
+			),
+			mcp.WithString("direction",
+				mcp.Description("Direction: 'callers' or 'callees' (default: callees)"),
+			),
+			mcp.WithNumber("max_depth",
+				mcp.Description("Maximum depth to analyze (default: 5)"),
+			),
+		), s.handleAnalyzeCallGraph)
+	}
+
+	// CompareCallGraphs - compare static vs actual execution
+	if shouldRegister("CompareCallGraphs") {
+		s.mcpServer.AddTool(mcp.NewTool("CompareCallGraphs",
+			mcp.WithDescription("Compare static call graph with actual execution trace. Identifies: common paths, untested paths (static only), and dynamic calls (actual only). Use for test coverage analysis and RCA."),
+			mcp.WithString("object_uri",
+				mcp.Required(),
+				mcp.Description("ADT URI of the root object"),
+			),
+			mcp.WithString("trace_data",
+				mcp.Required(),
+				mcp.Description("JSON array of trace edges from execution (format: [{caller_name, callee_name}, ...])"),
+			),
+		), s.handleCompareCallGraphs)
+	}
+
+	// TraceExecution - composite RCA tool
+	if shouldRegister("TraceExecution") {
+		s.mcpServer.AddTool(mcp.NewTool("TraceExecution",
+			mcp.WithDescription("COMPOSITE RCA TOOL: Performs traced execution analysis. 1) Builds static call graph from object, 2) Optionally runs unit tests, 3) Collects trace data, 4) Extracts actual call edges, 5) Compares static vs actual for root cause analysis."),
+			mcp.WithString("object_uri",
+				mcp.Required(),
+				mcp.Description("ADT URI of the starting object for static call graph"),
+			),
+			mcp.WithNumber("max_depth",
+				mcp.Description("Maximum depth for call graph traversal (default: 5)"),
+			),
+			mcp.WithBoolean("run_tests",
+				mcp.Description("Run unit tests before collecting trace (default: false)"),
+			),
+			mcp.WithString("test_object_uri",
+				mcp.Description("Object URI for tests to run (defaults to object_uri)"),
+			),
+			mcp.WithString("trace_user",
+				mcp.Description("Filter traces by user (defaults to current user)"),
+			),
+		), s.handleTraceExecution)
+	}
+
 	// --- Runtime Errors / Short Dumps (RABAX) ---
 
 	// GetDumps
@@ -684,68 +764,10 @@ func (s *Server) registerTools(mode string, disabledGroups string) {
 		), s.handleListSQLTraces)
 	}
 
-	// --- External Breakpoints ---
-
-	// SetExternalBreakpoint
-	if shouldRegister("SetExternalBreakpoint") {
-		s.mcpServer.AddTool(mcp.NewTool("SetExternalBreakpoint",
-			mcp.WithDescription("Set an external (persistent) breakpoint. Supports line, exception, statement, and message breakpoints. External breakpoints persist across sessions and trigger when the specified user runs code that hits them."),
-			mcp.WithString("kind",
-				mcp.Required(),
-				mcp.Description("Breakpoint kind: 'line', 'exception', 'statement', or 'message'"),
-			),
-			mcp.WithString("object_uri",
-				mcp.Description("ADT URI for line breakpoints (e.g., '/sap/bc/adt/programs/programs/ZTEST/source/main')"),
-			),
-			mcp.WithNumber("line",
-				mcp.Description("Line number for line breakpoints (1-based)"),
-			),
-			mcp.WithString("exception",
-				mcp.Description("Exception class for exception breakpoints (e.g., 'CX_SY_ZERODIVIDE')"),
-			),
-			mcp.WithString("statement",
-				mcp.Description("Statement type for statement breakpoints (e.g., 'CALL FUNCTION', 'RAISE EXCEPTION')"),
-			),
-			mcp.WithString("message_id",
-				mcp.Description("Message ID for message breakpoints"),
-			),
-			mcp.WithString("message_type",
-				mcp.Description("Message type for message breakpoints (E=Error, W=Warning, I=Info, S=Success, A=Abort)"),
-			),
-			mcp.WithString("condition",
-				mcp.Description("Optional condition expression (ABAP logical expression)"),
-			),
-			mcp.WithString("user",
-				mcp.Description("User to debug (defaults to current user)"),
-			),
-		), s.handleSetExternalBreakpoint)
-	}
-
-	// GetExternalBreakpoints
-	if shouldRegister("GetExternalBreakpoints") {
-		s.mcpServer.AddTool(mcp.NewTool("GetExternalBreakpoints",
-			mcp.WithDescription("Get all external (persistent) breakpoints for a user."),
-			mcp.WithString("user",
-				mcp.Description("User to get breakpoints for (defaults to current user)"),
-			),
-		), s.handleGetExternalBreakpoints)
-	}
-
-	// DeleteExternalBreakpoint
-	if shouldRegister("DeleteExternalBreakpoint") {
-		s.mcpServer.AddTool(mcp.NewTool("DeleteExternalBreakpoint",
-			mcp.WithDescription("Delete an external breakpoint by ID."),
-			mcp.WithString("breakpoint_id",
-				mcp.Required(),
-				mcp.Description("ID of the breakpoint to delete"),
-			),
-			mcp.WithString("user",
-				mcp.Description("User who owns the breakpoint (defaults to current user)"),
-			),
-		), s.handleDeleteExternalBreakpoint)
-	}
-
 	// --- Debugger Session ---
+	// NOTE: External breakpoint tools (SetExternalBreakpoint, GetExternalBreakpoints,
+	// DeleteExternalBreakpoint) removed - REST API returns 403 CSRF errors.
+	// Use WebSocket debug domain (ZADT_VSP) for breakpoint management instead.
 
 	// DebuggerListen
 	if shouldRegister("DebuggerListen") {
@@ -2215,6 +2237,232 @@ func (s *Server) handleGetObjectStructure(ctx context.Context, request mcp.CallT
 
 	result, _ := json.MarshalIndent(structure, "", "  ")
 	return mcp.NewToolResultText(string(result)), nil
+}
+
+func (s *Server) handleGetCallersOf(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	objectURI, ok := request.Params.Arguments["object_uri"].(string)
+	if !ok || objectURI == "" {
+		return newToolResultError("object_uri is required"), nil
+	}
+
+	maxDepth := 5
+	if depth, ok := request.Params.Arguments["max_depth"].(float64); ok && depth > 0 {
+		maxDepth = int(depth)
+	}
+
+	graph, err := s.adtClient.GetCallersOf(ctx, objectURI, maxDepth)
+	if err != nil {
+		return newToolResultError(fmt.Sprintf("Failed to get callers: %v", err)), nil
+	}
+
+	// Flatten to edges for easier consumption
+	edges := adt.FlattenCallGraph(graph)
+	stats := adt.AnalyzeCallGraph(graph)
+
+	output := map[string]interface{}{
+		"root":  graph,
+		"edges": edges,
+		"stats": stats,
+	}
+
+	result, _ := json.MarshalIndent(output, "", "  ")
+	return mcp.NewToolResultText(string(result)), nil
+}
+
+func (s *Server) handleGetCalleesOf(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	objectURI, ok := request.Params.Arguments["object_uri"].(string)
+	if !ok || objectURI == "" {
+		return newToolResultError("object_uri is required"), nil
+	}
+
+	maxDepth := 5
+	if depth, ok := request.Params.Arguments["max_depth"].(float64); ok && depth > 0 {
+		maxDepth = int(depth)
+	}
+
+	graph, err := s.adtClient.GetCalleesOf(ctx, objectURI, maxDepth)
+	if err != nil {
+		return newToolResultError(fmt.Sprintf("Failed to get callees: %v", err)), nil
+	}
+
+	// Flatten to edges for easier consumption
+	edges := adt.FlattenCallGraph(graph)
+	stats := adt.AnalyzeCallGraph(graph)
+
+	output := map[string]interface{}{
+		"root":  graph,
+		"edges": edges,
+		"stats": stats,
+	}
+
+	result, _ := json.MarshalIndent(output, "", "  ")
+	return mcp.NewToolResultText(string(result)), nil
+}
+
+func (s *Server) handleAnalyzeCallGraph(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	objectURI, ok := request.Params.Arguments["object_uri"].(string)
+	if !ok || objectURI == "" {
+		return newToolResultError("object_uri is required"), nil
+	}
+
+	direction := "callees"
+	if dir, ok := request.Params.Arguments["direction"].(string); ok && dir != "" {
+		direction = dir
+	}
+
+	maxDepth := 5
+	if depth, ok := request.Params.Arguments["max_depth"].(float64); ok && depth > 0 {
+		maxDepth = int(depth)
+	}
+
+	graph, err := s.adtClient.GetCallGraph(ctx, objectURI, &adt.CallGraphOptions{
+		Direction:  direction,
+		MaxDepth:   maxDepth,
+		MaxResults: 1000,
+	})
+	if err != nil {
+		return newToolResultError(fmt.Sprintf("Failed to get call graph: %v", err)), nil
+	}
+
+	stats := adt.AnalyzeCallGraph(graph)
+	edges := adt.FlattenCallGraph(graph)
+
+	output := map[string]interface{}{
+		"object_uri": objectURI,
+		"direction":  direction,
+		"stats":      stats,
+		"edge_count": len(edges),
+		"edges":      edges,
+	}
+
+	result, _ := json.MarshalIndent(output, "", "  ")
+	return mcp.NewToolResultText(string(result)), nil
+}
+
+func (s *Server) handleCompareCallGraphs(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	objectURI, ok := request.Params.Arguments["object_uri"].(string)
+	if !ok || objectURI == "" {
+		return newToolResultError("object_uri is required"), nil
+	}
+
+	traceDataStr, ok := request.Params.Arguments["trace_data"].(string)
+	if !ok || traceDataStr == "" {
+		return newToolResultError("trace_data is required (JSON array of edges)"), nil
+	}
+
+	// Parse trace data
+	var actualEdges []adt.CallGraphEdge
+	if err := json.Unmarshal([]byte(traceDataStr), &actualEdges); err != nil {
+		return newToolResultError(fmt.Sprintf("Failed to parse trace_data: %v", err)), nil
+	}
+
+	// Get static call graph
+	graph, err := s.adtClient.GetCallGraph(ctx, objectURI, &adt.CallGraphOptions{
+		Direction:  "callees",
+		MaxDepth:   10,
+		MaxResults: 1000,
+	})
+	if err != nil {
+		return newToolResultError(fmt.Sprintf("Failed to get static call graph: %v", err)), nil
+	}
+
+	staticEdges := adt.FlattenCallGraph(graph)
+
+	// Compare
+	comparison := adt.CompareCallGraphs(staticEdges, actualEdges)
+
+	output := map[string]interface{}{
+		"object_uri":      objectURI,
+		"static_edges":    len(staticEdges),
+		"actual_edges":    len(actualEdges),
+		"common_edges":    len(comparison.CommonEdges),
+		"untested_paths":  len(comparison.StaticOnly),
+		"dynamic_calls":   len(comparison.ActualOnly),
+		"coverage_ratio":  comparison.CoverageRatio,
+		"common":          comparison.CommonEdges,
+		"static_only":     comparison.StaticOnly,
+		"actual_only":     comparison.ActualOnly,
+	}
+
+	result, _ := json.MarshalIndent(output, "", "  ")
+	return mcp.NewToolResultText(string(result)), nil
+}
+
+func (s *Server) handleTraceExecution(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	objectURI, ok := request.Params.Arguments["object_uri"].(string)
+	if !ok || objectURI == "" {
+		return newToolResultError("object_uri is required"), nil
+	}
+
+	opts := &adt.TraceExecutionOptions{
+		ObjectURI: objectURI,
+		MaxDepth:  5,
+	}
+
+	if maxDepth, ok := request.Params.Arguments["max_depth"].(float64); ok {
+		opts.MaxDepth = int(maxDepth)
+	}
+
+	if runTests, ok := request.Params.Arguments["run_tests"].(bool); ok {
+		opts.RunTests = runTests
+	}
+
+	if testURI, ok := request.Params.Arguments["test_object_uri"].(string); ok && testURI != "" {
+		opts.TestObjectURI = testURI
+	} else if opts.RunTests {
+		opts.TestObjectURI = objectURI // Default to same object
+	}
+
+	if traceUser, ok := request.Params.Arguments["trace_user"].(string); ok && traceUser != "" {
+		opts.TraceUser = traceUser
+	}
+
+	result, err := s.adtClient.TraceExecution(ctx, opts)
+	if err != nil {
+		return newToolResultError(fmt.Sprintf("Trace execution failed: %v", err)), nil
+	}
+
+	// Build comprehensive output
+	output := map[string]interface{}{
+		"object_uri": objectURI,
+	}
+
+	if result.StaticStats != nil {
+		output["static_stats"] = result.StaticStats
+	}
+
+	if result.Trace != nil {
+		output["trace"] = map[string]interface{}{
+			"id":          result.Trace.TraceID,
+			"total_time":  result.Trace.TotalTime,
+			"total_calls": result.Trace.TotalCalls,
+			"entries":     len(result.Trace.Entries),
+		}
+	}
+
+	if len(result.ActualEdges) > 0 {
+		output["actual_edges"] = result.ActualEdges
+	}
+
+	if result.Comparison != nil {
+		output["comparison"] = map[string]interface{}{
+			"common_edges":   len(result.Comparison.CommonEdges),
+			"untested_paths": len(result.Comparison.StaticOnly),
+			"dynamic_calls":  len(result.Comparison.ActualOnly),
+			"coverage_ratio": result.Comparison.CoverageRatio,
+			"static_only":    result.Comparison.StaticOnly,
+			"actual_only":    result.Comparison.ActualOnly,
+		}
+	}
+
+	if len(result.ExecutedTests) > 0 {
+		output["executed_tests"] = result.ExecutedTests
+	}
+
+	output["execution_time_us"] = result.ExecutionTime
+
+	jsonResult, _ := json.MarshalIndent(output, "", "  ")
+	return mcp.NewToolResultText(string(jsonResult)), nil
 }
 
 // --- Runtime Errors / Short Dumps Handlers ---
@@ -4057,172 +4305,10 @@ func (s *Server) handleExecuteABAP(ctx context.Context, request mcp.CallToolRequ
 	return mcp.NewToolResultText(sb.String()), nil
 }
 
-// --- External Breakpoint Handlers ---
-
-func (s *Server) handleSetExternalBreakpoint(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	kind, ok := request.Params.Arguments["kind"].(string)
-	if !ok || kind == "" {
-		return newToolResultError("kind is required"), nil
-	}
-
-	// Build breakpoint based on kind
-	var bp adt.Breakpoint
-	bp.Enabled = true
-
-	switch kind {
-	case "line":
-		objectURI, _ := request.Params.Arguments["object_uri"].(string)
-		if objectURI == "" {
-			return newToolResultError("object_uri is required for line breakpoints"), nil
-		}
-		lineNum, _ := request.Params.Arguments["line"].(float64)
-		if lineNum <= 0 {
-			return newToolResultError("line number is required for line breakpoints"), nil
-		}
-		bp = adt.NewLineBreakpoint(objectURI, int(lineNum))
-
-	case "exception":
-		exception, _ := request.Params.Arguments["exception"].(string)
-		if exception == "" {
-			return newToolResultError("exception class is required for exception breakpoints"), nil
-		}
-		bp = adt.NewExceptionBreakpoint(exception)
-
-	case "statement":
-		statement, _ := request.Params.Arguments["statement"].(string)
-		if statement == "" {
-			return newToolResultError("statement is required for statement breakpoints"), nil
-		}
-		bp = adt.NewStatementBreakpoint(statement)
-
-	case "message":
-		messageID, _ := request.Params.Arguments["message_id"].(string)
-		messageType, _ := request.Params.Arguments["message_type"].(string)
-		if messageID == "" || messageType == "" {
-			return newToolResultError("message_id and message_type are required for message breakpoints"), nil
-		}
-		bp = adt.NewMessageBreakpoint(messageID, messageType)
-
-	default:
-		return newToolResultError(fmt.Sprintf("invalid breakpoint kind: %s (must be line, exception, statement, or message)", kind)), nil
-	}
-
-	// Add condition if specified
-	if condition, ok := request.Params.Arguments["condition"].(string); ok && condition != "" {
-		bp.Condition = condition
-	}
-
-	// Build request
-	user, _ := request.Params.Arguments["user"].(string)
-	req := &adt.BreakpointRequest{
-		Scope:         adt.BreakpointScopeExternal,
-		DebuggingMode: adt.DebuggingModeUser,
-		User:          user,
-		Breakpoints:   []adt.Breakpoint{bp},
-	}
-
-	resp, err := s.adtClient.SetExternalBreakpoint(ctx, req)
-	if err != nil {
-		return newToolResultError(fmt.Sprintf("SetExternalBreakpoint failed: %v", err)), nil
-	}
-
-	// Format output
-	var sb strings.Builder
-	sb.WriteString("External Breakpoint Set:\n\n")
-
-	for _, bp := range resp.Breakpoints {
-		sb.WriteString(fmt.Sprintf("ID: %s\n", bp.ID))
-		sb.WriteString(fmt.Sprintf("Kind: %s\n", bp.Kind))
-		sb.WriteString(fmt.Sprintf("Enabled: %t\n", bp.Enabled))
-
-		switch bp.Kind {
-		case adt.BreakpointKindLine:
-			sb.WriteString(fmt.Sprintf("URI: %s\n", bp.URI))
-			sb.WriteString(fmt.Sprintf("Line: %d\n", bp.Line))
-			if bp.ActualLine > 0 && bp.ActualLine != bp.Line {
-				sb.WriteString(fmt.Sprintf("Actual Line: %d\n", bp.ActualLine))
-			}
-		case adt.BreakpointKindException:
-			sb.WriteString(fmt.Sprintf("Exception: %s\n", bp.Exception))
-		case adt.BreakpointKindStatement:
-			sb.WriteString(fmt.Sprintf("Statement: %s\n", bp.Statement))
-		case adt.BreakpointKindMessage:
-			sb.WriteString(fmt.Sprintf("Message: %s/%s\n", bp.MessageID, bp.MessageType))
-		}
-
-		if bp.Condition != "" {
-			sb.WriteString(fmt.Sprintf("Condition: %s\n", bp.Condition))
-		}
-		if bp.ObjectName != "" {
-			sb.WriteString(fmt.Sprintf("Object: %s\n", bp.ObjectName))
-		}
-	}
-
-	return mcp.NewToolResultText(sb.String()), nil
-}
-
-func (s *Server) handleGetExternalBreakpoints(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	user, _ := request.Params.Arguments["user"].(string)
-
-	resp, err := s.adtClient.GetExternalBreakpoints(ctx, user)
-	if err != nil {
-		return newToolResultError(fmt.Sprintf("GetExternalBreakpoints failed: %v", err)), nil
-	}
-
-	if len(resp.Breakpoints) == 0 {
-		return mcp.NewToolResultText("No external breakpoints found."), nil
-	}
-
-	// Format output
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("External Breakpoints (%d):\n\n", len(resp.Breakpoints)))
-
-	for i, bp := range resp.Breakpoints {
-		sb.WriteString(fmt.Sprintf("[%d] ID: %s\n", i+1, bp.ID))
-		sb.WriteString(fmt.Sprintf("    Kind: %s\n", bp.Kind))
-		sb.WriteString(fmt.Sprintf("    Enabled: %t\n", bp.Enabled))
-
-		switch bp.Kind {
-		case adt.BreakpointKindLine:
-			sb.WriteString(fmt.Sprintf("    URI: %s\n", bp.URI))
-			sb.WriteString(fmt.Sprintf("    Line: %d\n", bp.Line))
-			if bp.ObjectName != "" {
-				sb.WriteString(fmt.Sprintf("    Object: %s\n", bp.ObjectName))
-			}
-		case adt.BreakpointKindException:
-			sb.WriteString(fmt.Sprintf("    Exception: %s\n", bp.Exception))
-		case adt.BreakpointKindStatement:
-			sb.WriteString(fmt.Sprintf("    Statement: %s\n", bp.Statement))
-		case adt.BreakpointKindMessage:
-			sb.WriteString(fmt.Sprintf("    Message: %s/%s\n", bp.MessageID, bp.MessageType))
-		}
-
-		if bp.Condition != "" {
-			sb.WriteString(fmt.Sprintf("    Condition: %s\n", bp.Condition))
-		}
-		sb.WriteString("\n")
-	}
-
-	return mcp.NewToolResultText(sb.String()), nil
-}
-
-func (s *Server) handleDeleteExternalBreakpoint(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	breakpointID, ok := request.Params.Arguments["breakpoint_id"].(string)
-	if !ok || breakpointID == "" {
-		return newToolResultError("breakpoint_id is required"), nil
-	}
-
-	user, _ := request.Params.Arguments["user"].(string)
-
-	err := s.adtClient.DeleteExternalBreakpoint(ctx, breakpointID, user)
-	if err != nil {
-		return newToolResultError(fmt.Sprintf("DeleteExternalBreakpoint failed: %v", err)), nil
-	}
-
-	return mcp.NewToolResultText(fmt.Sprintf("Breakpoint %s deleted successfully.", breakpointID)), nil
-}
-
 // --- Debugger Session Handlers ---
+// NOTE: External breakpoint handlers (handleSetExternalBreakpoint, handleGetExternalBreakpoints,
+// handleDeleteExternalBreakpoint) removed - REST API returns 403 CSRF errors.
+// Use WebSocket debug domain (ZADT_VSP) for breakpoint management instead.
 
 func (s *Server) handleDebuggerListen(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	user, _ := request.Params.Arguments["user"].(string)

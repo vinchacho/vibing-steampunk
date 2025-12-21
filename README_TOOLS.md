@@ -1,10 +1,10 @@
 # vsp Tool Reference
 
-Complete documentation for all 70 MCP tools available in vsp.
+Complete documentation for all 75 MCP tools available in vsp.
 
 **Mode Legend:**
 - **Focused** - Available in focused mode (31 tools, default)
-- **Expert** - Only available in expert mode (70 tools total)
+- **Expert** - Only available in expert mode (75 tools total)
 
 ---
 
@@ -72,12 +72,17 @@ These tools replace 11 granular read/write operations with intelligent parameter
 
 ---
 
-## Code Analysis (2 tools) - NEW
+## Code Analysis (7 tools) - NEW
 
 | Tool | Description | Mode |
 |------|-------------|------|
 | `GetCallGraph` | Get call hierarchy (callers/callees) for methods/functions | Focused |
 | `GetObjectStructure` | Get object explorer tree structure | Focused |
+| `GetCallersOf` | Get who calls this object (static call graph - up traversal) | Expert |
+| `GetCalleesOf` | Get what this object calls (static call graph - down traversal) | Expert |
+| `AnalyzeCallGraph` | Get statistics about call graph (nodes, edges, depth, types) | Expert |
+| `CompareCallGraphs` | Compare static vs actual execution for test coverage analysis | Expert |
+| `TraceExecution` | **COMPOSITE RCA TOOL**: Static graph + trace + comparison for root cause analysis | Expert |
 
 ---
 
