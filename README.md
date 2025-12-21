@@ -528,17 +528,136 @@ end
 
 See `examples/scripts/` for more examples.
 
+## RCA, Replay & Test Extraction
+
+### The Vision: AI-Powered Debugging Pipeline
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  1. SET BREAKPOINT    →  2. RUN PROGRAM    →  3. CAPTURE CONTEXT           │
+│     setBreakpoint()       (trigger via         saveCheckpoint()             │
+│     on FM/method          unit test/RFC)       for each hit                 │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  4. EXTRACT TEST CASES  →  5. AI NORMALIZE  →  6. GENERATE UNIT TESTS      │
+│     inputs + outputs       deduplicate,         ABAP Unit classes           │
+│     from checkpoints       explain patterns     with mocks                  │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Example: Capture FM Execution for Test Generation
+
+```lua
+-- Step 1: Set breakpoint on function module entry
+local bpId = setBreakpoint("SAPL<FGROUP>", 10)  -- Entry point
+
+-- Step 2: Prepare to capture multiple executions
+local captures = {}
+
+-- Step 3: Loop to capture test cases
+for i = 1, 10 do
+    local event = listen(120)  -- Wait for debuggee
+    if not event then break end
+
+    attach(event.id)
+
+    -- Capture input parameters at entry
+    local vars = getVariables()
+    local testCase = {
+        id = i,
+        inputs = extractInputs(vars),  -- IV_*, IT_*, IS_*
+        timestamp = os.time()
+    }
+
+    -- Step to end to capture outputs
+    continue_()
+    local event2 = listen(5)
+    if event2 then
+        attach(event2.id)
+        testCase.outputs = extractOutputs(getVariables())  -- EV_*, ET_*, ES_*, RETURN
+    end
+
+    -- Save checkpoint for replay
+    saveCheckpoint("testcase_" .. i, testCase)
+    table.insert(captures, testCase)
+
+    detach()
+end
+
+-- Step 4: Export for AI processing
+print(json.encode(captures))
+```
+
+### AI Processing Pipeline
+
+After capturing test cases, AI can:
+
+1. **Normalize & Deduplicate** - Group similar inputs, identify unique scenarios
+2. **Explain Patterns** - "TestCase 3 tests error path when IV_AMOUNT < 0"
+3. **Generate Unit Tests** - Create ABAP Unit test class with proper mocks
+
+```
+User: "Analyze captured test cases and generate unit tests"
+
+AI Workflow:
+  1. Load checkpoints     → listCheckpoints("testcase_*")
+  2. Analyze patterns     → Cluster by input signatures
+  3. Identify edge cases  → Empty tables, zero values, error conditions
+  4. Generate mock specs  → Which FMs/DB tables need mocking
+  5. Create ABAP Unit     → ZCL_TEST_<FM> with test methods
+  6. Deploy tests         → WriteSource to SAP system
+```
+
+### What Works Today (v2.14)
+
+| Feature | Status | Command/Function |
+|---------|--------|------------------|
+| Set breakpoints | ✅ | `setBreakpoint(program, line)` |
+| Listen for debuggee | ✅ | `listen(timeout)` |
+| Attach/detach | ✅ | `attach(id)`, `detach()` |
+| Step execution | ✅ | `stepOver()`, `stepInto()`, `continue_()` |
+| Get variables | ✅ | `getVariables()` |
+| Get stack trace | ✅ | `getStack()` |
+| Save checkpoints | ✅ | `saveCheckpoint(name, data)` |
+| Load checkpoints | ✅ | `getCheckpoint(name)` |
+| Call graph analysis | ✅ | `getCallersOf()`, `getCalleesOf()` |
+| Short dump analysis | ✅ | `getDumps()`, `getDump(id)` |
+
+### Coming in Future Phases
+
+| Feature | Phase | Description |
+|---------|-------|-------------|
+| Variable history recording | 5.2 | Track all variable changes during execution |
+| Force Replay (state injection) | 5.5 | Inject saved state into live debug session |
+| Test case extraction | 6.1 | Automated input/output extraction from recordings |
+| ABAP test generator | 6.3 | Generate ABAP Unit classes from test cases |
+| Mock framework | 6.4 | ZCL_VSP_MOCK for DB/RFC mocking |
+| Isolated playground | 7.1 | Fast test execution with mocked dependencies |
+| Time-travel debugging | 8.1 | Navigate backwards through execution |
+
+### Related Documentation
+
+| Document | Description |
+|----------|-------------|
+| [VISION.md](VISION.md) | The dream: AI as a senior developer |
+| [ROADMAP.md](ROADMAP.md) | Detailed implementation timeline |
+| [TAS & Scripting](reports/2025-12-21-001-tas-scripting-time-travel-vision.md) | Technical design for TAS-style debugging |
+| [Test Extraction](reports/2025-12-21-002-test-extraction-isolated-replay.md) | Playground and mock architecture |
+| [Force Replay](reports/2025-12-21-003-force-replay-state-injection.md) | State injection design |
+| [AI-Powered RCA](reports/2025-12-05-013-ai-powered-rca-workflows.md) | Root cause analysis workflows |
+
+---
+
 ## Vision & Roadmap
 
 **Where we're going:** TAS-style debugging, time-travel, AI-powered RCA
 
 | Phase | Target | Features |
 |-------|--------|----------|
-| 5 | Q1 2026 | Lua scripting, variable history, checkpoints |
-| 6 | Q2 2026 | Test case extraction from recordings |
-| 7 | Q3 2026 | Isolated playground with mocks |
-| 8 | Q4 2026 | Time-travel debugging |
-| 9+ | 2027 | Multi-agent debugging, self-healing |
+| 5 | Q1 2026 | Lua scripting ✅, variable history, checkpoints, Force Replay |
+| 6 | Q2 2026 | Test case extraction, ABAP test generator, mock framework |
+| 7 | Q3 2026 | Isolated playground with mocks, patch & re-run |
+| 8 | Q4 2026 | Time-travel debugging, temporal queries |
+| 9+ | 2027 | AI-suggested breakpoints, multi-agent debugging, self-healing |
 
 **Read more:**
 - [VISION.md](VISION.md) - The dream: AI as a senior developer
