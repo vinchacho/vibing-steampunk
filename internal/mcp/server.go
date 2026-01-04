@@ -171,17 +171,21 @@ func (s *Server) ServeStdio() error {
 }
 
 // registerTools registers ADT tools with the MCP server based on mode and disabled groups.
-// Mode "focused" registers 41 essential tools.
-// Mode "expert" registers all 68 tools.
+// Mode "focused" registers essential tools.
+// Mode "expert" registers all tools.
 // DisabledGroups can disable specific tool groups using short codes:
 //   - "5" or "U" = UI5/BSP tools (3 tools, read-only)
 //   - "T" = Test tools: RunUnitTests, RunATCCheck (2 tools)
-//   - "H" = HANA/AMDP debugger (5 tools)
-//   - "D" = ABAP Debugger (9 tools: external breakpoints + debugger session)
-//   - "C" = CTS/Transport tools (5 tools: list, get, create, release, delete)
+//   - "H" = HANA/AMDP debugger (7 tools)
+//   - "D" = ABAP Debugger (6 session tools)
+//   - "C" = CTS/Transport tools (5 tools)
+//   - "G" = Git/abapGit tools (2 tools)
+//   - "R" = Report tools (4 tools)
+//   - "I" = Install tools (4 tools)
+//   - "X" = EXPERIMENTAL: All debugger + RunReport (17 tools) - use to disable unreliable features
 func (s *Server) registerTools(mode string, disabledGroups string) {
 	// Define tool groups for selective disablement
-	// Short codes: 5/U=UI5, T=Tests, H=HANA, D=Debug, C=CTS
+	// Short codes: 5/U=UI5, T=Tests, H=HANA, D=Debug, C=CTS, X=Experimental
 	toolGroups := map[string][]string{
 		"5": { // UI5/BSP tools (also mapped as "U") - read-only, write ops need custom plugin
 			"UI5ListApps", "UI5GetApp", "UI5GetFileContent",
@@ -213,6 +217,17 @@ func (s *Server) registerTools(mode string, disabledGroups string) {
 			"ListDependencies",
 			"InstallDummyTest",
 		},
+		"X": { // EXPERIMENTAL - Tools requiring special setup or with known limitations
+			// ABAP Debugger - requires ZADT_VSP WebSocket handler
+			"SetBreakpoint", "GetBreakpoints", "DeleteBreakpoint",
+			"DebuggerListen", "DebuggerAttach", "DebuggerDetach",
+			"DebuggerStep", "DebuggerGetStack", "DebuggerGetVariables",
+			// AMDP/HANA Debugger - experimental, session management issues
+			"AMDPDebuggerStart", "AMDPDebuggerResume", "AMDPDebuggerStop",
+			"AMDPDebuggerStep", "AMDPGetVariables", "AMDPSetBreakpoint", "AMDPGetBreakpoints",
+			// RunReport - requires ZADT_VSP, APC context limitations
+			"RunReport",
+		},
 	}
 	// Map "U" to same tools as "5"
 	toolGroups["U"] = toolGroups["5"]
@@ -241,26 +256,28 @@ func (s *Server) registerTools(mode string, disabledGroups string) {
 		// Primary workflow (1)
 		"EditSource": true,
 
-		// Data/Metadata read (5)
+		// Data/Metadata read (6)
 		"GetTable":            true,
 		"GetTableContents":    true,
 		"RunQuery":            true,
 		"GetPackage":          true, // Metadata: package contents
 		"GetFunctionGroup":    true, // Metadata: function module list
 		"GetCDSDependencies":  true, // CDS dependency tree
+		"GetMessages":         true, // Message class texts (SE91)
 
 		// Code intelligence (2)
 		"FindDefinition":  true,
 		"FindReferences":  true,
 
-		// Development tools (7)
+		// Development tools (8)
 		"SyntaxCheck":         true,
 		"RunUnitTests":        true,
-		"RunATCCheck":         true, // Code quality checks
-		"Activate":            true, // Re-activate objects without editing
-		"PrettyPrint":         true, // Format ABAP code
-		"GetInactiveObjects":  true, // List pending activations
-		"CreatePackage":       true, // Create local packages ($...)
+		"RunATCCheck":         true,  // Code quality checks
+		"Activate":            true,  // Re-activate objects without editing
+		"ActivatePackage":     true,  // Batch activation of all inactive objects
+		"PrettyPrint":         true,  // Format ABAP code
+		"GetInactiveObjects":  true,  // List pending activations
+		"CreatePackage":       true,  // Create local packages ($...)
 
 		// Advanced/Edge cases (2)
 		"LockObject":   true,
@@ -284,8 +301,8 @@ func (s *Server) registerTools(mode string, disabledGroups string) {
 		"TraceExecution":     true, // Composite RCA tool
 
 		// Runtime errors / Short dumps (2)
-		"GetDumps": true, // List runtime errors
-		"GetDump":  true, // Get dump details
+		"ListDumps": true, // List runtime errors (consistent with List* pattern)
+		"GetDump":   true, // Get dump details
 
 		// ABAP Profiler / Traces (2)
 		"ListTraces": true, // List trace files
@@ -538,6 +555,17 @@ func (s *Server) registerTools(mode string, disabledGroups string) {
 	), s.handleGetPackage)
 	}
 
+	// GetMessages - Message class texts (SE91)
+	if shouldRegister("GetMessages") {
+		s.mcpServer.AddTool(mcp.NewTool("GetMessages",
+			mcp.WithDescription("Get all messages from an ABAP message class (SE91). Returns message number, text for all messages in the class. Use SearchObject to find message classes first."),
+			mcp.WithString("message_class",
+				mcp.Required(),
+				mcp.Description("Name of the message class (e.g., 'ZRAY_00', 'SY')"),
+			),
+		), s.handleGetMessages)
+	}
+
 
 	// GetTransaction
 	if shouldRegister("GetTransaction") {
@@ -712,9 +740,9 @@ func (s *Server) registerTools(mode string, disabledGroups string) {
 
 	// --- Runtime Errors / Short Dumps (RABAX) ---
 
-	// GetDumps
-	if shouldRegister("GetDumps") {
-		s.mcpServer.AddTool(mcp.NewTool("GetDumps",
+	// ListDumps (renamed from GetDumps for consistency with List* pattern)
+	if shouldRegister("ListDumps") {
+		s.mcpServer.AddTool(mcp.NewTool("ListDumps",
 			mcp.WithDescription("List runtime errors (short dumps) from the SAP system. Filter by user, exception type, program, date range."),
 			mcp.WithString("user",
 				mcp.Description("Filter by username"),
@@ -737,7 +765,7 @@ func (s *Server) registerTools(mode string, disabledGroups string) {
 			mcp.WithNumber("max_results",
 				mcp.Description("Maximum number of results (default: 100)"),
 			),
-		), s.handleGetDumps)
+		), s.handleListDumps)
 	}
 
 	// GetDump
@@ -746,7 +774,7 @@ func (s *Server) registerTools(mode string, disabledGroups string) {
 			mcp.WithDescription("Get full details of a specific runtime error (short dump) including stack trace."),
 			mcp.WithString("dump_id",
 				mcp.Required(),
-				mcp.Description("Dump ID from GetDumps result"),
+				mcp.Description("Dump ID from ListDumps result"),
 			),
 		), s.handleGetDump)
 	}
@@ -970,6 +998,19 @@ func (s *Server) registerTools(mode string, disabledGroups string) {
 			mcp.Description("Technical name of the object (e.g., ZTEST)"),
 		),
 	), s.handleActivate)
+	}
+
+	// ActivatePackage - Batch activation of inactive objects
+	if shouldRegister("ActivatePackage") {
+		s.mcpServer.AddTool(mcp.NewTool("ActivatePackage",
+			mcp.WithDescription("Activate all inactive objects. Objects are sorted by dependency order (interfaces before classes). If no package specified, activates ALL inactive objects for current user."),
+			mcp.WithString("package",
+				mcp.Description("Package name to filter (optional, empty = all packages)"),
+			),
+			mcp.WithNumber("max_objects",
+				mcp.Description("Maximum number of objects to activate (default: 100)"),
+			),
+		), s.handleActivatePackage)
 	}
 
 	// RunUnitTests
@@ -2350,6 +2391,21 @@ func (s *Server) handleGetPackage(ctx context.Context, request mcp.CallToolReque
 	return mcp.NewToolResultText(string(result)), nil
 }
 
+func (s *Server) handleGetMessages(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	msgClass, ok := request.Params.Arguments["message_class"].(string)
+	if !ok || msgClass == "" {
+		return newToolResultError("message_class is required"), nil
+	}
+
+	mc, err := s.adtClient.GetMessageClass(ctx, msgClass)
+	if err != nil {
+		return newToolResultError(fmt.Sprintf("Failed to get message class: %v", err)), nil
+	}
+
+	result, _ := json.MarshalIndent(mc, "", "  ")
+	return mcp.NewToolResultText(string(result)), nil
+}
+
 func (s *Server) handleGetTransaction(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	tcode, ok := request.Params.Arguments["transaction_name"].(string)
 	if !ok || tcode == "" {
@@ -2725,7 +2781,7 @@ func (s *Server) handleTraceExecution(ctx context.Context, request mcp.CallToolR
 
 // --- Runtime Errors / Short Dumps Handlers ---
 
-func (s *Server) handleGetDumps(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (s *Server) handleListDumps(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	opts := &adt.DumpQueryOptions{
 		MaxResults: 100,
 	}
@@ -2913,6 +2969,26 @@ func (s *Server) handleActivate(ctx context.Context, request mcp.CallToolRequest
 	result, err := s.adtClient.Activate(ctx, objectURL, objectName)
 	if err != nil {
 		return newToolResultError(fmt.Sprintf("Activation failed: %v", err)), nil
+	}
+
+	output, _ := json.MarshalIndent(result, "", "  ")
+	return mcp.NewToolResultText(string(output)), nil
+}
+
+func (s *Server) handleActivatePackage(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	packageName := ""
+	if pkg, ok := request.Params.Arguments["package"].(string); ok {
+		packageName = pkg
+	}
+
+	maxObjects := 100
+	if max, ok := request.Params.Arguments["max_objects"].(float64); ok && max > 0 {
+		maxObjects = int(max)
+	}
+
+	result, err := s.adtClient.ActivatePackage(ctx, packageName, maxObjects)
+	if err != nil {
+		return newToolResultError(fmt.Sprintf("Batch activation failed: %v", err)), nil
 	}
 
 	output, _ := json.MarshalIndent(result, "", "  ")

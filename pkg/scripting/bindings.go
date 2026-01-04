@@ -76,8 +76,10 @@ func (e *LuaEngine) registerADTBindings() {
 	e.L.SetGlobal("replayFromStep", e.L.NewFunction(e.luaReplayFromStep))
 
 	// Diagnostics
-	e.L.SetGlobal("getDumps", e.L.NewFunction(e.luaGetDumps))
+	e.L.SetGlobal("listDumps", e.L.NewFunction(e.luaGetDumps)) // New canonical name
+	e.L.SetGlobal("getDumps", e.L.NewFunction(e.luaGetDumps))  // Backwards compatibility
 	e.L.SetGlobal("getDump", e.L.NewFunction(e.luaGetDump))
+	e.L.SetGlobal("getMessages", e.L.NewFunction(e.luaGetMessages))
 	e.L.SetGlobal("runUnitTests", e.L.NewFunction(e.luaRunUnitTests))
 	e.L.SetGlobal("syntaxCheck", e.L.NewFunction(e.luaSyntaxCheck))
 }
@@ -974,6 +976,33 @@ func (e *LuaEngine) luaGetDump(L *lua.LState) int {
 		}
 		L.SetField(tbl, "stack", stack)
 	}
+
+	L.Push(tbl)
+	return 1
+}
+
+func (e *LuaEngine) luaGetMessages(L *lua.LState) int {
+	msgClass := getString(L, 1)
+
+	mc, err := e.client.GetMessageClass(e.ctx, msgClass)
+	if err != nil {
+		L.Push(lua.LNil)
+		L.Push(lua.LString(err.Error()))
+		return 2
+	}
+
+	tbl := L.NewTable()
+	L.SetField(tbl, "name", lua.LString(mc.Name))
+	L.SetField(tbl, "description", lua.LString(mc.Description))
+
+	msgs := L.NewTable()
+	for i, msg := range mc.Messages {
+		row := L.NewTable()
+		L.SetField(row, "number", lua.LString(msg.Number))
+		L.SetField(row, "text", lua.LString(msg.Text))
+		msgs.RawSetInt(i+1, row)
+	}
+	L.SetField(tbl, "messages", msgs)
 
 	L.Push(tbl)
 	return 1

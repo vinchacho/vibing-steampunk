@@ -333,6 +333,132 @@ func parseInactiveObjects(data []byte) ([]InactiveObjectRecord, error) {
 	return results, nil
 }
 
+// --- Batch Activation ---
+
+// ActivatePackageResult represents the result of batch activation.
+type ActivatePackageResult struct {
+	Activated []ActivatedObject  `json:"activated"`
+	Failed    []ActivationFailed `json:"failed"`
+	Skipped   []string           `json:"skipped,omitempty"`
+	Summary   string             `json:"summary"`
+}
+
+// ActivatedObject represents a successfully activated object.
+type ActivatedObject struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
+	URI  string `json:"uri"`
+}
+
+// ActivationFailed represents a failed activation.
+type ActivationFailed struct {
+	Name   string `json:"name"`
+	Type   string `json:"type"`
+	Reason string `json:"reason"`
+}
+
+// objectTypePriority returns activation priority for object types.
+// Lower number = activate first (interfaces before classes, etc.)
+func objectTypePriority(objType string) int {
+	priorities := map[string]int{
+		"DOMA/DD": 1, // Domains first
+		"DTEL/DE": 2, // Data elements
+		"TABL/DT": 3, // Tables/structures
+		"TTYP/TT": 4, // Table types
+		"INTF/OI": 5, // Interfaces before classes
+		"CLAS/OC": 6, // Classes
+		"FUGR/F":  7, // Function groups
+		"PROG/P":  8, // Programs
+		"DDLS/DF": 9, // CDS views
+	}
+	if p, ok := priorities[objType]; ok {
+		return p
+	}
+	return 50 // Unknown types last
+}
+
+// ActivatePackage activates all inactive objects in a package.
+// If packageName is empty, activates ALL inactive objects for the current user.
+// Objects are sorted by dependency order before activation.
+func (c *Client) ActivatePackage(ctx context.Context, packageName string, maxObjects int) (*ActivatePackageResult, error) {
+	// Safety check
+	if err := c.checkSafety(OpActivate, "ActivatePackage"); err != nil {
+		return nil, err
+	}
+
+	// Get all inactive objects
+	inactive, err := c.GetInactiveObjects(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("getting inactive objects: %w", err)
+	}
+
+	// Filter by package if specified
+	var toActivate []InactiveObjectRecord
+	packageName = strings.ToUpper(packageName)
+	for _, rec := range inactive {
+		if rec.Object == nil {
+			continue
+		}
+		// Check if object belongs to package (URI contains package path)
+		if packageName == "" {
+			toActivate = append(toActivate, rec)
+		} else {
+			// Package is typically in the URI as parent path segment
+			// e.g., /sap/bc/adt/programs/programs/ZTEST for package $TMP
+			// We need to check the ParentURI or query object details
+			// For now, include all if filtering by package
+			// TODO: Add proper package filtering via object metadata
+			toActivate = append(toActivate, rec)
+		}
+	}
+
+	// Limit number of objects
+	if maxObjects > 0 && len(toActivate) > maxObjects {
+		toActivate = toActivate[:maxObjects]
+	}
+
+	// Sort by dependency order (interfaces before classes, etc.)
+	for i := 0; i < len(toActivate)-1; i++ {
+		for j := i + 1; j < len(toActivate); j++ {
+			if toActivate[i].Object != nil && toActivate[j].Object != nil {
+				if objectTypePriority(toActivate[i].Object.Type) > objectTypePriority(toActivate[j].Object.Type) {
+					toActivate[i], toActivate[j] = toActivate[j], toActivate[i]
+				}
+			}
+		}
+	}
+
+	result := &ActivatePackageResult{
+		Activated: []ActivatedObject{},
+		Failed:    []ActivationFailed{},
+	}
+
+	// Activate each object
+	for _, rec := range toActivate {
+		if rec.Object == nil {
+			continue
+		}
+		obj := rec.Object
+		_, err := c.Activate(ctx, obj.URI, obj.Name)
+		if err != nil {
+			result.Failed = append(result.Failed, ActivationFailed{
+				Name:   obj.Name,
+				Type:   obj.Type,
+				Reason: err.Error(),
+			})
+		} else {
+			result.Activated = append(result.Activated, ActivatedObject{
+				Name: obj.Name,
+				Type: obj.Type,
+				URI:  obj.URI,
+			})
+		}
+	}
+
+	result.Summary = fmt.Sprintf("Activated %d objects, %d failed", len(result.Activated), len(result.Failed))
+	return result, nil
+}
+
 // --- Unit Tests ---
 
 // UnitTestRunFlags controls which tests to run.

@@ -279,6 +279,16 @@ func (s *debugSession) repl() error {
 		case "info":
 			s.printInfo()
 
+		case "run", "exec":
+			if err := s.runProgram(args); err != nil {
+				fmt.Printf("Error: %v\n", err)
+			}
+
+		case "call", "rfc":
+			if err := s.callRFC(args); err != nil {
+				fmt.Printf("Error: %v\n", err)
+			}
+
 		default:
 			fmt.Printf("Unknown command: %s (type 'h' for help)\n", cmd)
 		}
@@ -302,6 +312,10 @@ Commands:
     b <prog> <line>  Set line breakpoint
     d <id>           Delete breakpoint
     l, list          List all breakpoints
+
+  Trigger:
+    run <prog> [variant]   Run program via RFC (hits breakpoints)
+    call <fm> [p=v ...]    Call function module
 
   Session:
     a, attach    Wait for debuggee (listen mode)
@@ -583,4 +597,158 @@ func (s *debugSession) printInfo() {
 		fmt.Printf("  Debuggee: %s\n", s.debuggeeID)
 	}
 	fmt.Println()
+}
+
+// runProgram triggers a program and auto-attaches to catch breakpoints.
+// Flow: Start listener → Trigger program → Auto-attach when breakpoint hits
+func (s *debugSession) runProgram(args []string) error {
+	if len(args) < 1 {
+		fmt.Println("Usage: run <program> [variant]")
+		fmt.Println("Example: run ZADT_DEBUG_TRIGGER")
+		fmt.Println("         run ZADT_DEBUG_TRIGGER TESTVAR")
+		fmt.Println("\nThis will: set up listener → trigger program → auto-attach")
+		return nil
+	}
+
+	if s.wsClient == nil {
+		return fmt.Errorf("WebSocket not connected - cannot run programs")
+	}
+
+	if s.attached {
+		return fmt.Errorf("already attached - use 'detach' first")
+	}
+
+	program := strings.ToUpper(args[0])
+	variant := ""
+	if len(args) > 1 {
+		variant = strings.ToUpper(args[1])
+	}
+
+	fmt.Printf("Running %s with auto-attach...\n", program)
+
+	// Channel to receive debuggee from listener
+	type listenResult struct {
+		debuggee *adt.Debuggee
+		err      error
+	}
+	resultCh := make(chan listenResult, 1)
+
+	// Start listener in background goroutine
+	go func() {
+		opts := &adt.ListenOptions{
+			DebuggingMode:  adt.DebuggingModeUser,
+			User:           s.user,
+			TimeoutSeconds: 30, // Short timeout for triggered execution
+		}
+
+		result, err := s.client.DebuggerListen(s.ctx, opts)
+		if err != nil {
+			resultCh <- listenResult{err: err}
+			return
+		}
+
+		if result.TimedOut {
+			resultCh <- listenResult{err: fmt.Errorf("timeout - no breakpoint hit")}
+			return
+		}
+
+		if result.Conflict != nil {
+			resultCh <- listenResult{err: fmt.Errorf("conflict: %s", result.Conflict.ConflictText)}
+			return
+		}
+
+		resultCh <- listenResult{debuggee: result.Debuggee}
+	}()
+
+	// Give listener a moment to start
+	time.Sleep(100 * time.Millisecond)
+
+	// Trigger the program via WebSocket report domain (uses SUBMIT)
+	fmt.Printf("Triggering %s via WebSocket SUBMIT...\n", program)
+
+	// RunReport is async - doesn't wait for completion (blocked on breakpoint)
+	if err := s.wsClient.RunReport(s.ctx, program, variant); err != nil {
+		return fmt.Errorf("failed to trigger report: %w", err)
+	}
+
+	// Wait for listener to catch debuggee
+	fmt.Println("Waiting for breakpoint...")
+
+	select {
+	case result := <-resultCh:
+		if result.err != nil {
+			return result.err
+		}
+
+		if result.debuggee == nil {
+			return fmt.Errorf("no debuggee caught")
+		}
+
+		// Auto-attach
+		fmt.Printf("Caught at %s:%d\n", result.debuggee.Program, result.debuggee.Line)
+
+		attachResult, err := s.client.DebuggerAttach(s.ctx, result.debuggee.ID, s.user)
+		if err != nil {
+			return fmt.Errorf("attach failed: %w", err)
+		}
+
+		s.attached = true
+		s.debuggeeID = result.debuggee.ID
+		fmt.Printf("Attached! Session: %s\n", attachResult.DebugSessionID)
+
+	case <-s.ctx.Done():
+		return s.ctx.Err()
+
+	case <-time.After(35 * time.Second):
+		return fmt.Errorf("timeout waiting for breakpoint")
+	}
+
+	return nil
+}
+
+// callRFC calls a function module to trigger code execution.
+func (s *debugSession) callRFC(args []string) error {
+	if len(args) < 1 {
+		fmt.Println("Usage: call <function_module> [param=value ...]")
+		fmt.Println("Example: call RFC_PING")
+		fmt.Println("         call BAPI_USER_GET_DETAIL USERNAME=AVINOGRADOVA")
+		return nil
+	}
+
+	if s.wsClient == nil {
+		return fmt.Errorf("WebSocket not connected - cannot call RFC")
+	}
+
+	fm := strings.ToUpper(args[0])
+	params := make(map[string]string)
+
+	// Parse param=value pairs
+	for _, arg := range args[1:] {
+		parts := strings.SplitN(arg, "=", 2)
+		if len(parts) == 2 {
+			params[strings.ToUpper(parts[0])] = parts[1]
+		}
+	}
+
+	fmt.Printf("Calling %s...\n", fm)
+
+	ctx, cancel := context.WithTimeout(s.ctx, 60*time.Second)
+	defer cancel()
+
+	result, err := s.wsClient.CallRFC(ctx, fm, params)
+	if err != nil {
+		return fmt.Errorf("RFC call failed: %w", err)
+	}
+
+	fmt.Printf("Result: subrc=%d\n", result.Subrc)
+
+	// Print exports if any
+	if len(result.Exports) > 0 {
+		fmt.Println("Exports:")
+		for k, v := range result.Exports {
+			fmt.Printf("  %s = %v\n", k, v)
+		}
+	}
+
+	return nil
 }

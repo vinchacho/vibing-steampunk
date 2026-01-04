@@ -685,3 +685,140 @@ func (c *DebugWebSocketClient) CallRFC(ctx context.Context, function string, par
 		return nil, fmt.Errorf("RFC call timeout")
 	}
 }
+
+// RunReport executes a report via background job (RFC domain, runReport action).
+// This schedules the report as a background job, which runs in a separate work process
+// and CAN hit external breakpoints.
+func (c *DebugWebSocketClient) RunReport(ctx context.Context, report string, variant string) error {
+	c.mu.RLock()
+	conn := c.conn
+	c.mu.RUnlock()
+
+	if conn == nil {
+		return fmt.Errorf("not connected")
+	}
+
+	id := fmt.Sprintf("rfc_run_%d", c.msgID.Add(1))
+
+	// Build params for RFC domain runReport action
+	paramsObj := map[string]interface{}{
+		"report": report,
+	}
+	if variant != "" {
+		paramsObj["variant"] = variant
+	}
+
+	// Build message with RFC domain (runReport schedules as background job)
+	rawMsg := map[string]interface{}{
+		"id":      id,
+		"domain":  "rfc",
+		"action":  "runReport",
+		"params":  paramsObj,
+		"timeout": 30000,
+	}
+
+	respCh := make(chan *WSResponse, 1)
+	c.pendingMu.Lock()
+	c.pending[id] = respCh
+	c.pendingMu.Unlock()
+
+	data, err := json.Marshal(rawMsg)
+	if err != nil {
+		c.pendingMu.Lock()
+		delete(c.pending, id)
+		c.pendingMu.Unlock()
+		return err
+	}
+
+	c.mu.Lock()
+	err = c.conn.WriteMessage(websocket.TextMessage, data)
+	c.mu.Unlock()
+	if err != nil {
+		c.pendingMu.Lock()
+		delete(c.pending, id)
+		c.pendingMu.Unlock()
+		return err
+	}
+
+	// Don't wait for response - the report might be blocked on breakpoint
+	// The listener will catch the debuggee
+	go func() {
+		select {
+		case <-respCh:
+			// Report finished (no breakpoint hit or continued past)
+		case <-time.After(60 * time.Second):
+			c.pendingMu.Lock()
+			delete(c.pending, id)
+			c.pendingMu.Unlock()
+		}
+	}()
+
+	return nil
+}
+
+// RunReportSync executes a report via background job and waits for the response.
+func (c *DebugWebSocketClient) RunReportSync(ctx context.Context, report string, variant string) (*WSResponse, error) {
+	c.mu.RLock()
+	conn := c.conn
+	c.mu.RUnlock()
+
+	if conn == nil {
+		return nil, fmt.Errorf("not connected")
+	}
+
+	id := fmt.Sprintf("rfc_run_%d", c.msgID.Add(1))
+
+	paramsObj := map[string]interface{}{
+		"report": report,
+	}
+	if variant != "" {
+		paramsObj["variant"] = variant
+	}
+
+	rawMsg := map[string]interface{}{
+		"id":      id,
+		"domain":  "rfc",
+		"action":  "runReport",
+		"params":  paramsObj,
+		"timeout": 30000,
+	}
+
+	respCh := make(chan *WSResponse, 1)
+	c.pendingMu.Lock()
+	c.pending[id] = respCh
+	c.pendingMu.Unlock()
+
+	data, err := json.Marshal(rawMsg)
+	if err != nil {
+		c.pendingMu.Lock()
+		delete(c.pending, id)
+		c.pendingMu.Unlock()
+		return nil, err
+	}
+
+	c.mu.Lock()
+	err = c.conn.WriteMessage(websocket.TextMessage, data)
+	c.mu.Unlock()
+	if err != nil {
+		c.pendingMu.Lock()
+		delete(c.pending, id)
+		c.pendingMu.Unlock()
+		return nil, err
+	}
+
+	// Wait for response
+	select {
+	case resp := <-respCh:
+		return resp, nil
+	case <-ctx.Done():
+		c.pendingMu.Lock()
+		delete(c.pending, id)
+		c.pendingMu.Unlock()
+		return nil, ctx.Err()
+	case <-time.After(60 * time.Second):
+		c.pendingMu.Lock()
+		delete(c.pending, id)
+		c.pendingMu.Unlock()
+		return nil, fmt.Errorf("report timeout")
+	}
+}
