@@ -86,14 +86,20 @@ These tools replace 11 granular read/write operations with intelligent parameter
 
 ---
 
-## Development Tools (4 tools)
+## Development Tools (10 tools)
 
 | Tool | Description | Mode |
 |------|-------------|------|
 | `SyntaxCheck` | Check source code for syntax errors | Focused |
 | `Activate` | Activate an ABAP object | Expert |
+| `ActivatePackage` | Batch activate all inactive objects in package | Focused |
 | `RunUnitTests` | Execute ABAP Unit tests | Focused |
 | `RunATCCheck` | Run ATC code quality checks | Focused |
+| `CompareSource` | Unified diff between any two ABAP objects | Focused |
+| `CloneObject` | Copy PROG/CLAS/INTF to new name | Focused |
+| `GetClassInfo` | Quick class metadata (methods, attrs, interfaces) | Focused |
+| `CreateTable` | Create DDIC table from JSON definition | Focused |
+| `CreatePackage` | Create local package ($...) | Focused |
 
 ---
 
@@ -348,11 +354,39 @@ embedded/
 
 ---
 
+## Report Execution Tools (6 tools) - NEW v2.19.0
+
+Execute ABAP reports with parameters and capture ALV output. Includes async pattern for long-running reports.
+
+| Tool | Description | Mode |
+|------|-------------|------|
+| `RunReport` | Execute report with params/variant, capture ALV output | Focused |
+| `RunReportAsync` | Start report in background, returns task_id | Focused |
+| `GetAsyncResult` | Poll or wait for async task completion | Focused |
+| `GetVariants` | List available variants for a report | Focused |
+| `GetTextElements` | Get selection texts and text symbols | Focused |
+| `SetTextElements` | Update selection texts and text symbols | Focused |
+
+**Async Pattern:**
+```
+1. RunReportAsync(report="RFITEMGL", params={...})
+   → {"task_id": "report_1736034567_1", "status": "started"}
+
+2. GetAsyncResult(task_id="...", wait=true)
+   → Blocks up to 60s, returns full result when complete
+```
+
+**Requires:** ZADT_VSP WebSocket handler deployed to SAP system.
+
+**Tool Group:** Report tools can be disabled with `--disabled-groups R`
+
+---
+
 ## Tool Count Summary
 
 | Mode | Tools | Description |
 |------|-------|-------------|
-| **Focused** | 51 | Essential tools for AI-assisted development |
+| **Focused** | 54 | Essential tools for AI-assisted development |
 | **Expert** | 99 | All tools including low-level operations and RAP creation |
 
 **Token Savings with Focused Mode:**

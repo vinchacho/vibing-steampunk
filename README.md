@@ -11,7 +11,17 @@
 
 ## What's New
 
-**v2.19.0** - Interactive CLI Debugger
+**v2.19.0** - Async Execution & Developer Productivity
+- **RunReportAsync**: Execute reports in background goroutine - no more timeouts!
+- **GetAsyncResult**: Poll or wait for async task completion (up to 60s)
+- **CompareSource**: Unified diff between any two ABAP objects (LCS algorithm)
+- **CloneObject**: Copy PROG/CLAS/INTF to new name with auto-replace
+- **GetClassInfo**: Quick class metadata via CAI (methods, attrs, interfaces)
+- **CreateTable**: Create DDIC tables from simple JSON definition
+- **GetSystemInfo**: Fixed to use SQL (CVERS/T000) - works across all SAP versions
+- **54 Focused / 99 Expert Tools** - see [Release Notes](reports/2026-01-05-001-v2.19.0-release-notes.md)
+
+**v2.18.1** - Interactive CLI Debugger
 - **`vsp debug` Command**: Standalone interactive ABAP debugger
 - **REPL Interface**: s=step, n=next, o=out, c=continue, r=stack, v=vars
 - **WebSocket Breakpoints**: Set/delete/list via ZADT_VSP

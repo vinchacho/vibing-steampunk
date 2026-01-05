@@ -4,7 +4,7 @@ This file provides context for AI assistants (Claude, etc.) working on this proj
 
 ## Project Overview
 
-**vsp** is a Go-native MCP (Model Context Protocol) server for SAP ABAP Development Tools (ADT). It provides a single-binary distribution with 48 essential tools (focused mode, default) or 96 complete tools (expert mode) for use with Claude and other MCP-compatible LLMs.
+**vsp** is a Go-native MCP (Model Context Protocol) server for SAP ABAP Development Tools (ADT). It provides a single-binary distribution with 54 essential tools (focused mode, default) or 99 complete tools (expert mode) for use with Claude and other MCP-compatible LLMs.
 
 ## Quick Reference
 
@@ -352,7 +352,7 @@ When creating a new report:
 
 | Metric | Value |
 |--------|-------|
-| **Tools** | 99 (51 focused, 99 expert) |
+| **Tools** | 99 (54 focused, 99 expert) |
 | **Unit Tests** | 244 |
 | **Integration Tests** | 34 |
 | **Platforms** | 9 |
