@@ -40,6 +40,10 @@ CLASS zcl_vsp_rfc_service DEFINITION
       IMPORTING is_message         TYPE zif_vsp_service=>ty_message
       RETURNING VALUE(rs_response) TYPE zif_vsp_service=>ty_response.
 
+    METHODS handle_run_report
+      IMPORTING is_message         TYPE zif_vsp_service=>ty_message
+      RETURNING VALUE(rs_response) TYPE zif_vsp_service=>ty_response.
+
     METHODS get_func_interface
       IMPORTING iv_function       TYPE rs38l_fnam
       EXPORTING et_import         TYPE tt_param_info
@@ -92,6 +96,8 @@ CLASS zcl_vsp_rfc_service IMPLEMENTATION.
         rs_response = handle_ping( is_message ).
       WHEN 'moveToPackage'.
         rs_response = handle_move_to_package( is_message ).
+      WHEN 'runReport'.
+        rs_response = handle_run_report( is_message ).
       WHEN OTHERS.
         rs_response = build_error(
           iv_id      = is_message-id
@@ -583,6 +589,71 @@ CLASS zcl_vsp_rfc_service IMPLEMENTATION.
       success = abap_false
       error   = |{ lv_o }"code":"{ iv_code }","message":"{ escape_json( iv_message ) }"{ lv_c }|
     ).
+  ENDMETHOD.
+
+  METHOD handle_run_report.
+    " Run a report via async RFC - workaround for APC_ILLEGAL_STATEMENT with SUBMIT
+    " Uses STARTING NEW TASK to run in separate work process
+    DATA: lv_report  TYPE progname,
+          lv_variant TYPE raldb_vari,
+          lv_task    TYPE string.
+
+    DATA(lv_report_str) = extract_param( iv_params = is_message-params iv_name = 'report' ).
+    DATA(lv_variant_str) = extract_param( iv_params = is_message-params iv_name = 'variant' ).
+
+    IF lv_report_str IS INITIAL.
+      rs_response = build_error( iv_id = is_message-id iv_code = 'MISSING_PARAM' iv_message = 'Parameter report is required' ).
+      RETURN.
+    ENDIF.
+
+    TRANSLATE lv_report_str TO UPPER CASE.
+    lv_report = lv_report_str.
+
+    IF lv_variant_str IS NOT INITIAL.
+      TRANSLATE lv_variant_str TO UPPER CASE.
+      lv_variant = lv_variant_str.
+    ENDIF.
+
+    " Verify report exists
+    SELECT SINGLE name FROM trdir INTO @DATA(lv_exists) WHERE name = @lv_report.
+    IF sy-subrc <> 0.
+      rs_response = build_error( iv_id = is_message-id iv_code = 'REPORT_NOT_FOUND' iv_message = |Report { lv_report } not found| ).
+      RETURN.
+    ENDIF.
+
+    " Generate unique task name
+    lv_task = |VSP_{ sy-uzeit }|.
+
+    " Call RFC async to run in separate work process
+    " This avoids APC_ILLEGAL_STATEMENT since SUBMIT happens in different process
+    TRY.
+        CALL FUNCTION 'RFC_ABAP_INSTALL_AND_RUN'
+          STARTING NEW TASK lv_task
+          EXPORTING
+            program_name = lv_report
+          EXCEPTIONS
+            system_failure        = 1
+            communication_failure = 2
+            resource_failure      = 3
+            OTHERS                = 4.
+
+        IF sy-subrc <> 0.
+          rs_response = build_error( iv_id = is_message-id iv_code = 'RFC_ERROR' iv_message = |Async RFC failed: { sy-subrc }| ).
+          RETURN.
+        ENDIF.
+
+      CATCH cx_root INTO DATA(lx_error).
+        rs_response = build_error( iv_id = is_message-id iv_code = 'RFC_ERROR' iv_message = lx_error->get_text( ) ).
+        RETURN.
+    ENDTRY.
+
+    " Success response - note that execution is async
+    DATA(lv_o) = '{'.
+    DATA(lv_c) = '}'.
+    DATA lv_json TYPE string.
+    lv_json = |{ lv_o }"status":"started","report":"{ lv_report }","task":"{ lv_task }","mode":"async_rfc"{ lv_c }|.
+
+    rs_response = VALUE #( id = is_message-id success = abap_true data = lv_json ).
   ENDMETHOD.
 
 ENDCLASS.

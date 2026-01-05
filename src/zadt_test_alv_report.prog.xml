@@ -19,22 +19,23 @@
     <item>
      <ID>S</ID>
      <KEY>P_MULT</KEY>
-     <ENTRY>er</ENTRY>
-     <LENGTH>10</LENGTH>
-     <SPLIT>Multipli</SPLIT>
+     <ENTRY>Multiplier</ENTRY>
+     <LENGTH>18</LENGTH>
+     <SPLIT>P_MULT</SPLIT>
     </item>
     <item>
      <ID>S</ID>
      <KEY>P_ROWS</KEY>
-     <ENTRY>f Rows</ENTRY>
-     <LENGTH>14</LENGTH>
-     <SPLIT>Number o</SPLIT>
+     <ENTRY>Number of Rows</ENTRY>
+     <LENGTH>22</LENGTH>
+     <SPLIT>P_ROWS</SPLIT>
     </item>
     <item>
      <ID>S</ID>
      <KEY>S_ID</KEY>
-     <LENGTH>8</LENGTH>
-     <SPLIT>ID Range</SPLIT>
+     <ENTRY>ID Range</ENTRY>
+     <LENGTH>16</LENGTH>
+     <SPLIT>S_ID</SPLIT>
     </item>
     <item>
      <ID>I</ID>
