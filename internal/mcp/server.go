@@ -6004,8 +6004,8 @@ func (s *Server) handleGitExport(ctx context.Context, request mcp.CallToolReques
 // --- Report Execution Handlers ---
 
 func (s *Server) handleRunReport(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	// Ensure WebSocket connection
-	if s.amdpWSClient == nil {
+	// Ensure WebSocket connection (check both nil and disconnected states)
+	if s.amdpWSClient == nil || !s.amdpWSClient.IsConnected() {
 		s.amdpWSClient = adt.NewAMDPWebSocketClient(
 			s.config.BaseURL, s.config.Client, s.config.Username, s.config.Password, s.config.InsecureSkipVerify,
 		)
@@ -6226,8 +6226,8 @@ func (s *Server) handleGetAsyncResult(ctx context.Context, request mcp.CallToolR
 }
 
 func (s *Server) handleGetVariants(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	// Ensure WebSocket connection
-	if s.amdpWSClient == nil {
+	// Ensure WebSocket connection (check both nil and disconnected states)
+	if s.amdpWSClient == nil || !s.amdpWSClient.IsConnected() {
 		s.amdpWSClient = adt.NewAMDPWebSocketClient(
 			s.config.BaseURL, s.config.Client, s.config.Username, s.config.Password, s.config.InsecureSkipVerify,
 		)
@@ -6266,8 +6266,8 @@ func (s *Server) handleGetVariants(ctx context.Context, request mcp.CallToolRequ
 }
 
 func (s *Server) handleGetTextElements(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	// Ensure WebSocket connection
-	if s.amdpWSClient == nil {
+	// Ensure WebSocket connection (check both nil and disconnected states)
+	if s.amdpWSClient == nil || !s.amdpWSClient.IsConnected() {
 		s.amdpWSClient = adt.NewAMDPWebSocketClient(
 			s.config.BaseURL, s.config.Client, s.config.Username, s.config.Password, s.config.InsecureSkipVerify,
 		)
@@ -6315,8 +6315,8 @@ func (s *Server) handleGetTextElements(ctx context.Context, request mcp.CallTool
 }
 
 func (s *Server) handleSetTextElements(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	// Ensure WebSocket connection
-	if s.amdpWSClient == nil {
+	// Ensure WebSocket connection (check both nil and disconnected states)
+	if s.amdpWSClient == nil || !s.amdpWSClient.IsConnected() {
 		s.amdpWSClient = adt.NewAMDPWebSocketClient(
 			s.config.BaseURL, s.config.Client, s.config.Username, s.config.Password, s.config.InsecureSkipVerify,
 		)
