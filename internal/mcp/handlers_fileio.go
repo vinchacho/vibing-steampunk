@@ -200,7 +200,19 @@ func (s *Server) handleEditSource(ctx context.Context, request mcp.CallToolReque
 		caseInsensitive = ci
 	}
 
-	result, err := s.adtClient.EditSource(ctx, objectURL, oldString, newString, replaceAll, syntaxCheck, caseInsensitive)
+	method := ""
+	if m, ok := request.Params.Arguments["method"].(string); ok {
+		method = m
+	}
+
+	opts := &adt.EditSourceOptions{
+		ReplaceAll:      replaceAll,
+		SyntaxCheck:     syntaxCheck,
+		CaseInsensitive: caseInsensitive,
+		Method:          method,
+	}
+
+	result, err := s.adtClient.EditSourceWithOptions(ctx, objectURL, oldString, newString, opts)
 	if err != nil {
 		return newToolResultError(fmt.Sprintf("EditSource failed: %v", err)), nil
 	}

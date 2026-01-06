@@ -1162,6 +1162,15 @@ type EditSourceResult struct {
 	SyntaxErrors  []string            `json:"syntaxErrors,omitempty"`
 	Activation    *ActivationResult   `json:"activation,omitempty"`
 	Message       string              `json:"message,omitempty"`
+	Method        string              `json:"method,omitempty"` // Method name if method-level edit
+}
+
+// EditSourceOptions provides optional parameters for EditSource.
+type EditSourceOptions struct {
+	ReplaceAll      bool   // If true, replace all occurrences; if false, require unique match
+	SyntaxCheck     bool   // If true, validate syntax before saving (default: true if not set)
+	CaseInsensitive bool   // If true, ignore case when matching
+	Method          string // For CLAS only: constrain search/replace to this method only
 }
 
 // normalizeLineEndings converts CRLF to LF for consistent matching
@@ -1243,6 +1252,16 @@ func replaceMatches(s, old, new string, replaceAll, caseInsensitive bool) string
 }
 
 // EditSource performs surgical string replacement on ABAP source code.
+// This is a backward-compatible wrapper for EditSourceWithOptions.
+func (c *Client) EditSource(ctx context.Context, objectURL, oldString, newString string, replaceAll, syntaxCheck, caseInsensitive bool) (*EditSourceResult, error) {
+	return c.EditSourceWithOptions(ctx, objectURL, oldString, newString, &EditSourceOptions{
+		ReplaceAll:      replaceAll,
+		SyntaxCheck:     syntaxCheck,
+		CaseInsensitive: caseInsensitive,
+	})
+}
+
+// EditSourceWithOptions performs surgical string replacement on ABAP source code with options.
 //
 // This tool matches the Edit pattern used for local files, enabling surgical
 // edits without downloading/uploading full source each time.
@@ -1253,20 +1272,29 @@ func replaceMatches(s, old, new string, replaceAll, caseInsensitive bool) string
 //   - objectURL: ADT URL (e.g., /sap/bc/adt/programs/programs/ZTEST)
 //   - oldString: Exact string to find (must be unique in source)
 //   - newString: Replacement string
-//   - replaceAll: If true, replace all occurrences; if false, require unique match
-//   - syntaxCheck: If true, validate syntax before saving (default: true)
-//   - caseInsensitive: If true, ignore case when matching (default: false)
+//   - opts: Optional parameters (ReplaceAll, SyntaxCheck, CaseInsensitive, Method)
+//
+// Method-level isolation (CLAS only):
+//   When opts.Method is set, the search is constrained to the specified method only.
+//   This prevents accidental edits in other methods when the same pattern exists elsewhere.
 //
 // Example:
-//   EditSource(ctx, "/sap/bc/adt/programs/programs/ZTEST",
+//   EditSourceWithOptions(ctx, "/sap/bc/adt/oo/classes/ZCL_TEST",
 //     "METHOD foo.\n  ENDMETHOD.",
 //     "METHOD foo.\n  rv_result = 42.\n  ENDMETHOD.",
-//     false, true, false)
-func (c *Client) EditSource(ctx context.Context, objectURL, oldString, newString string, replaceAll, syntaxCheck, caseInsensitive bool) (*EditSourceResult, error) {
+//     &EditSourceOptions{Method: "FOO"})
+func (c *Client) EditSourceWithOptions(ctx context.Context, objectURL, oldString, newString string, opts *EditSourceOptions) (*EditSourceResult, error) {
 	// Safety check
 	if err := c.checkSafety(OpUpdate, "EditSource"); err != nil {
 		return nil, err
 	}
+
+	// Default options
+	if opts == nil {
+		opts = &EditSourceOptions{SyntaxCheck: true}
+	}
+	// SyntaxCheck defaults to true if not explicitly set (zero value is false, so we need to handle this)
+	// Note: caller should explicitly set SyntaxCheck=false if they don't want it
 
 	result := &EditSourceResult{
 		ObjectURL: objectURL,
@@ -1278,6 +1306,23 @@ func (c *Client) EditSource(ctx context.Context, objectURL, oldString, newString
 	parts := strings.Split(objectURL, "/")
 	if len(parts) > 0 {
 		result.ObjectName = parts[len(parts)-1]
+	}
+
+	// Detect if this is a class URL (not an include)
+	isClass := strings.Contains(objectURL, "/sap/bc/adt/oo/classes/") && !strings.Contains(objectURL, "/includes/")
+	var classNameForMethod string
+	if isClass && opts.Method != "" {
+		// Extract class name for method-level isolation
+		classesPrefix := "/sap/bc/adt/oo/classes/"
+		if idx := strings.Index(objectURL, classesPrefix); idx >= 0 {
+			rest := objectURL[idx+len(classesPrefix):]
+			if slashIdx := strings.Index(rest, "/"); slashIdx > 0 {
+				classNameForMethod = rest[:slashIdx]
+			} else {
+				classNameForMethod = rest
+			}
+		}
+		result.Method = opts.Method
 	}
 
 	// Detect if this is a class include (e.g., /sap/bc/adt/oo/classes/ZCL_FOO/includes/testclasses)
@@ -1318,29 +1363,96 @@ func (c *Client) EditSource(ctx context.Context, objectURL, oldString, newString
 	}
 	source := string(resp.Body)
 
-	// 2. Check match count
-	matchCount := countMatches(source, oldString, caseInsensitive)
-	result.MatchCount = matchCount
-
-	if matchCount == 0 {
-		if caseInsensitive {
-			result.Message = "old_string not found in source (case-insensitive). Check for exact match (including whitespace, line breaks)."
-		} else {
-			result.Message = "old_string not found in source. Check for exact match (including whitespace, line breaks, case)."
+	// Method-level isolation: constrain search to the specified method only
+	var methodStart, methodEnd int
+	if classNameForMethod != "" && opts.Method != "" {
+		methods, err := c.GetClassMethods(ctx, classNameForMethod)
+		if err != nil {
+			result.Message = fmt.Sprintf("Failed to get class methods: %v", err)
+			return result, nil
 		}
-		return result, nil
+
+		// Find the specified method
+		var foundMethod *MethodInfo
+		methodNameUpper := strings.ToUpper(opts.Method)
+		for i := range methods {
+			if methods[i].Name == methodNameUpper {
+				foundMethod = &methods[i]
+				break
+			}
+		}
+		if foundMethod == nil {
+			result.Message = fmt.Sprintf("Method %s not found in class %s", opts.Method, classNameForMethod)
+			return result, nil
+		}
+
+		methodStart = foundMethod.ImplementationStart
+		methodEnd = foundMethod.ImplementationEnd
+
+		// Extract method source for match counting
+		sourceLines := strings.Split(source, "\n")
+		if methodEnd > len(sourceLines) {
+			methodEnd = len(sourceLines)
+		}
+		if methodStart < 1 {
+			methodStart = 1
+		}
+		methodSource := strings.Join(sourceLines[methodStart-1:methodEnd], "\n")
+
+		// Count matches in method source only
+		matchCount := countMatches(methodSource, oldString, opts.CaseInsensitive)
+		result.MatchCount = matchCount
+
+		if matchCount == 0 {
+			if opts.CaseInsensitive {
+				result.Message = fmt.Sprintf("old_string not found in method %s (case-insensitive). Check for exact match.", opts.Method)
+			} else {
+				result.Message = fmt.Sprintf("old_string not found in method %s. Check for exact match.", opts.Method)
+			}
+			return result, nil
+		}
+
+		if !opts.ReplaceAll && matchCount > 1 {
+			result.Message = fmt.Sprintf("old_string matches %d locations in method %s (not unique). Set replaceAll=true or include more context.", matchCount, opts.Method)
+			return result, nil
+		}
+
+		// Apply replacement only within method boundaries
+		newMethodSource := replaceMatches(methodSource, oldString, newString, opts.ReplaceAll, opts.CaseInsensitive)
+
+		// Reconstruct full source with the edited method
+		var newSourceLines []string
+		newSourceLines = append(newSourceLines, sourceLines[:methodStart-1]...)
+		newSourceLines = append(newSourceLines, strings.Split(newMethodSource, "\n")...)
+		newSourceLines = append(newSourceLines, sourceLines[methodEnd:]...)
+		source = strings.Join(newSourceLines, "\n")
+	} else {
+		// Non-method edit: check match count in full source
+		matchCount := countMatches(source, oldString, opts.CaseInsensitive)
+		result.MatchCount = matchCount
+
+		if matchCount == 0 {
+			if opts.CaseInsensitive {
+				result.Message = "old_string not found in source (case-insensitive). Check for exact match (including whitespace, line breaks)."
+			} else {
+				result.Message = "old_string not found in source. Check for exact match (including whitespace, line breaks, case)."
+			}
+			return result, nil
+		}
+
+		if !opts.ReplaceAll && matchCount > 1 {
+			result.Message = fmt.Sprintf("old_string matches %d locations (not unique). Set replaceAll=true to replace all, or include more surrounding context to make match unique.", matchCount)
+			return result, nil
+		}
+
+		// Apply replacement
+		source = replaceMatches(source, oldString, newString, opts.ReplaceAll, opts.CaseInsensitive)
 	}
 
-	if !replaceAll && matchCount > 1 {
-		result.Message = fmt.Sprintf("old_string matches %d locations (not unique). Set replaceAll=true to replace all, or include more surrounding context to make match unique.", matchCount)
-		return result, nil
-	}
-
-	// 3. Apply replacement
-	newSource := replaceMatches(source, oldString, newString, replaceAll, caseInsensitive)
+	newSource := source
 
 	// 4. Optional syntax check
-	if syntaxCheck {
+	if opts.SyntaxCheck {
 		// For class includes, pass the include URL directly - SyntaxCheck handles it
 		syntaxErrors, err := c.SyntaxCheck(ctx, objectURL, newSource)
 		if err != nil {
@@ -1414,8 +1526,10 @@ func (c *Client) EditSource(ctx context.Context, objectURL, oldString, newString
 	result.Activation = activation
 
 	result.Success = true
-	if replaceAll {
-		result.Message = fmt.Sprintf("Successfully replaced %d occurrences and activated %s", matchCount, result.ObjectName)
+	if opts.Method != "" {
+		result.Message = fmt.Sprintf("Successfully edited method %s and activated %s", opts.Method, result.ObjectName)
+	} else if opts.ReplaceAll {
+		result.Message = fmt.Sprintf("Successfully replaced %d occurrences and activated %s", result.MatchCount, result.ObjectName)
 	} else {
 		result.Message = fmt.Sprintf("Successfully edited and activated %s", result.ObjectName)
 	}
@@ -1798,6 +1912,7 @@ func isSourceObject(objectType string) bool {
 type GetSourceOptions struct {
 	Parent  string // Function group name (required for FUNC type)
 	Include string // Class include type: definitions, implementations, macros, testclasses (optional for CLAS type)
+	Method  string // Method name for method-level source extraction (optional for CLAS type)
 }
 
 // GetSource is a unified tool for reading ABAP source code across different object types.
@@ -1805,7 +1920,7 @@ type GetSourceOptions struct {
 //
 // Supported types:
 //   - PROG: Programs (name = program name)
-//   - CLAS: Classes (name = class name, include = definitions|implementations|macros|testclasses)
+//   - CLAS: Classes (name = class name, include = definitions|implementations|macros|testclasses, method = method name)
 //   - INTF: Interfaces (name = interface name)
 //   - FUNC: Function modules (name = function module name, parent = function group name)
 //   - FUGR: Function groups (name = function group name)
@@ -1834,6 +1949,11 @@ func (c *Client) GetSource(ctx context.Context, objectType, name string, opts *G
 		return c.GetProgram(ctx, name)
 
 	case "CLAS":
+		// Method-level source extraction
+		if opts.Method != "" {
+			return c.GetClassMethodSource(ctx, name, opts.Method)
+		}
+		// Include-level source extraction
 		if opts.Include != "" {
 			return c.GetClassInclude(ctx, name, ClassIncludeType(opts.Include))
 		}
@@ -1922,6 +2042,7 @@ type WriteSourceOptions struct {
 	Package     string          // Package name (for create)
 	TestSource  string          // Test source for CLAS (auto-creates test include)
 	Transport   string          // Transport request number
+	Method      string          // For CLAS only: update only this method (source must be METHOD...ENDMETHOD block)
 }
 
 // WriteSourceResult represents the result of WriteSource operation
@@ -1931,6 +2052,7 @@ type WriteSourceResult struct {
 	ObjectName    string                     `json:"objectName"`
 	ObjectURL     string                     `json:"objectUrl"`
 	Mode          string                     `json:"mode"` // "created" or "updated"
+	Method        string                     `json:"method,omitempty"` // Method name if method-level update
 	SyntaxErrors  []SyntaxCheckResult        `json:"syntaxErrors,omitempty"`
 	Activation    *ActivationResult          `json:"activation,omitempty"`
 	TestResults   *UnitTestResult            `json:"testResults,omitempty"` // For CLAS with TestSource
@@ -2700,6 +2822,22 @@ func (c *Client) writeSourceUpdate(ctx context.Context, objectType, name, source
 		return result, nil
 
 	case "CLAS":
+		// Method-level update: replace only the specified method
+		if opts.Method != "" {
+			methodResult, err := c.writeClassMethodUpdate(ctx, name, opts.Method, source, opts.Transport)
+			if err != nil {
+				result.Message = fmt.Sprintf("Failed to update method: %v", err)
+				return result, nil
+			}
+			result.Success = methodResult.Success
+			result.ObjectURL = methodResult.ObjectURL
+			result.Method = methodResult.Method
+			result.SyntaxErrors = methodResult.SyntaxErrors
+			result.Activation = methodResult.Activation
+			result.Message = methodResult.Message
+			return result, nil
+		}
+
 		classResult, err := c.WriteClass(ctx, name, source, opts.Transport)
 		if err != nil {
 			result.Message = fmt.Sprintf("Failed to update class: %v", err)
@@ -2903,6 +3041,131 @@ func (c *Client) writeSourceUpdate(ctx context.Context, objectType, name, source
 		result.Message = fmt.Sprintf("Unsupported object type for update: %s", objectType)
 		return result, nil
 	}
+}
+
+// writeClassMethodUpdate updates a single method in a class.
+// The source should be the METHOD...ENDMETHOD block.
+func (c *Client) writeClassMethodUpdate(ctx context.Context, className, methodName, methodSource, transport string) (*WriteSourceResult, error) {
+	result := &WriteSourceResult{
+		ObjectType: "CLAS",
+		ObjectName: className,
+		Method:     strings.ToUpper(methodName),
+		Mode:       "updated",
+	}
+
+	className = strings.ToUpper(className)
+	methodName = strings.ToUpper(methodName)
+	objectURL := fmt.Sprintf("/sap/bc/adt/oo/classes/%s", strings.ToLower(className))
+	result.ObjectURL = objectURL
+
+	// Get method boundaries
+	methods, err := c.GetClassMethods(ctx, className)
+	if err != nil {
+		result.Message = fmt.Sprintf("Failed to get class methods: %v", err)
+		return result, nil
+	}
+
+	// Find the specified method
+	var foundMethod *MethodInfo
+	for i := range methods {
+		if methods[i].Name == methodName {
+			foundMethod = &methods[i]
+			break
+		}
+	}
+	if foundMethod == nil {
+		result.Message = fmt.Sprintf("Method %s not found in class %s", methodName, className)
+		return result, nil
+	}
+
+	if foundMethod.ImplementationStart == 0 || foundMethod.ImplementationEnd == 0 {
+		result.Message = fmt.Sprintf("Method %s has no implementation lines (abstract method?)", methodName)
+		return result, nil
+	}
+
+	// Get current class source
+	currentSource, err := c.GetClassSource(ctx, className)
+	if err != nil {
+		result.Message = fmt.Sprintf("Failed to get current class source: %v", err)
+		return result, nil
+	}
+
+	// Split into lines
+	sourceLines := strings.Split(currentSource, "\n")
+	if foundMethod.ImplementationEnd > len(sourceLines) {
+		result.Message = fmt.Sprintf("Method line range (%d-%d) exceeds source lines (%d)",
+			foundMethod.ImplementationStart, foundMethod.ImplementationEnd, len(sourceLines))
+		return result, nil
+	}
+
+	// Reconstruct source with new method implementation
+	var newSourceLines []string
+	newSourceLines = append(newSourceLines, sourceLines[:foundMethod.ImplementationStart-1]...)
+	newSourceLines = append(newSourceLines, strings.Split(methodSource, "\n")...)
+	newSourceLines = append(newSourceLines, sourceLines[foundMethod.ImplementationEnd:]...)
+	newSource := strings.Join(newSourceLines, "\n")
+
+	// Syntax check
+	syntaxErrors, err := c.SyntaxCheck(ctx, objectURL, newSource)
+	if err != nil {
+		result.Message = fmt.Sprintf("Syntax check failed: %v", err)
+		return result, nil
+	}
+
+	for _, se := range syntaxErrors {
+		if se.Severity == "E" || se.Severity == "A" || se.Severity == "X" {
+			result.SyntaxErrors = syntaxErrors
+			result.Message = fmt.Sprintf("Method %s has syntax errors - not saved", methodName)
+			return result, nil
+		}
+	}
+	result.SyntaxErrors = syntaxErrors
+
+	// Lock
+	lock, err := c.LockObject(ctx, objectURL, "MODIFY")
+	if err != nil {
+		result.Message = fmt.Sprintf("Failed to lock class: %v", err)
+		return result, nil
+	}
+
+	defer func() {
+		if !result.Success {
+			c.UnlockObject(ctx, objectURL, lock.LockHandle)
+		}
+	}()
+
+	// Update
+	sourceURL := objectURL + "/source/main"
+	err = c.UpdateSource(ctx, sourceURL, newSource, lock.LockHandle, transport)
+	if err != nil {
+		result.Message = fmt.Sprintf("Failed to update class source: %v", err)
+		return result, nil
+	}
+
+	// Unlock
+	err = c.UnlockObject(ctx, objectURL, lock.LockHandle)
+	if err != nil {
+		result.Message = fmt.Sprintf("Failed to unlock class: %v", err)
+		return result, nil
+	}
+
+	// Activate
+	activation, err := c.Activate(ctx, objectURL, className)
+	if err != nil {
+		result.Message = fmt.Sprintf("Failed to activate class: %v", err)
+		result.Activation = activation
+		return result, nil
+	}
+
+	result.Activation = activation
+	if activation.Success {
+		result.Success = true
+		result.Message = fmt.Sprintf("Method %s updated and class %s activated successfully", methodName, className)
+	} else {
+		result.Message = fmt.Sprintf("Method %s updated but activation failed - check activation messages", methodName)
+	}
+
+	return result, nil
 }
 
 // --- Compare Source Tool ---

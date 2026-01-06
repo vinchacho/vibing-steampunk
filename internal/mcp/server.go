@@ -1614,6 +1614,9 @@ func (s *Server) registerTools(mode string, disabledGroups string) {
 		mcp.WithBoolean("case_insensitive",
 			mcp.Description("If true, ignore case when matching old_string. Useful for renaming variables regardless of case. Default: false"),
 		),
+		mcp.WithString("method",
+			mcp.Description("For CLAS only: constrain search/replace to this method only. Prevents accidental edits in other methods. (optional)"),
+		),
 	), s.handleEditSource)
 	}
 

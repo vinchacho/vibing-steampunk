@@ -2,6 +2,7 @@ package adt
 
 import (
 	"encoding/xml"
+	"fmt"
 	"strings"
 )
 
@@ -174,6 +175,102 @@ type TableField struct {
 	Description string `xml:"description,attr,omitempty" json:"description,omitempty"`
 	IsKey       bool   `xml:"isKey,attr,omitempty" json:"key,omitempty"`         // Primary key field
 	NotNull     bool   `xml:"-" json:"notNull,omitempty"`                        // NOT NULL constraint
+}
+
+// ClassObjectStructure represents the object structure of a class with methods.
+// Used for method-level source operations.
+type ClassObjectStructure struct {
+	XMLName  xml.Name                  `xml:"objectStructureElement"`
+	Name     string                    `xml:"name,attr"`
+	Type     string                    `xml:"type,attr"`
+	Elements []ClassObjectStructureElement `xml:"objectStructureElement"`
+	Links    []ClassObjectStructureLink    `xml:"link"`
+}
+
+// ClassObjectStructureElement represents an element (method, attribute, type) in the class structure.
+type ClassObjectStructureElement struct {
+	Name      string                     `xml:"name,attr"`
+	Type      string                     `xml:"type,attr"` // CLAS/OM for method, CLAS/OA for attribute, CLAS/OT for type
+	ClifName  string                     `xml:"clif_name,attr,omitempty"`
+	Level     string                     `xml:"level,attr,omitempty"`     // instance or static
+	Visibility string                    `xml:"visibility,attr,omitempty"` // public, protected, private
+	Links     []ClassObjectStructureLink `xml:"link"`
+}
+
+// ClassObjectStructureLink represents a link in the class object structure.
+type ClassObjectStructureLink struct {
+	Href string `xml:"href,attr"`
+	Rel  string `xml:"rel,attr"`
+	Type string `xml:"type,attr,omitempty"`
+}
+
+// MethodInfo represents information about a class method with source boundaries.
+type MethodInfo struct {
+	Name              string // Method name
+	Visibility        string // public, protected, private
+	Level             string // instance or static
+	DefinitionStart   int    // Line number where definition starts
+	DefinitionEnd     int    // Line number where definition ends
+	ImplementationStart int  // Line number where implementation starts
+	ImplementationEnd   int  // Line number where implementation ends
+}
+
+// ParseClassObjectStructure parses the class object structure XML.
+func ParseClassObjectStructure(data []byte) (*ClassObjectStructure, error) {
+	var obj ClassObjectStructure
+	if err := xml.Unmarshal(data, &obj); err != nil {
+		return nil, err
+	}
+	return &obj, nil
+}
+
+// GetMethods extracts method information from the class object structure.
+func (c *ClassObjectStructure) GetMethods() []MethodInfo {
+	var methods []MethodInfo
+
+	for _, elem := range c.Elements {
+		// Only process methods (type CLAS/OM)
+		if elem.Type != "CLAS/OM" {
+			continue
+		}
+
+		method := MethodInfo{
+			Name:       elem.Name,
+			Visibility: elem.Visibility,
+			Level:      elem.Level,
+		}
+
+		// Parse line numbers from links
+		for _, link := range elem.Links {
+			switch link.Rel {
+			case "http://www.sap.com/adt/relations/source/definitionBlock":
+				method.DefinitionStart, method.DefinitionEnd = parseSourceRange(link.Href)
+			case "http://www.sap.com/adt/relations/source/implementationBlock":
+				method.ImplementationStart, method.ImplementationEnd = parseSourceRange(link.Href)
+			}
+		}
+
+		methods = append(methods, method)
+	}
+
+	return methods
+}
+
+// parseSourceRange parses a source range from an ADT href.
+// Format: ./../class/source/main#start=739,2;end=887,11
+func parseSourceRange(href string) (start, end int) {
+	// Find the fragment part
+	idx := strings.Index(href, "#")
+	if idx == -1 {
+		return 0, 0
+	}
+	fragment := href[idx+1:]
+
+	// Parse start=line,col;end=line,col
+	var startLine, startCol, endLine, endCol int
+	_, _ = fmt.Sscanf(fragment, "start=%d,%d;end=%d,%d", &startLine, &startCol, &endLine, &endCol)
+
+	return startLine, endLine
 }
 
 // ParseSearchResults parses XML search results.

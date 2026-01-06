@@ -371,6 +371,9 @@ func (s *Server) registerGetSource() {
 		mcp.WithString("include",
 			mcp.Description("Class include type for CLAS: definitions, implementations, macros, testclasses (optional)"),
 		),
+		mcp.WithString("method",
+			mcp.Description("Method name for CLAS only: returns only the METHOD...ENDMETHOD block for the specified method (optional)"),
+		),
 	), s.handleGetSource)
 }
 
@@ -405,6 +408,9 @@ func (s *Server) registerWriteSource() {
 		mcp.WithString("transport",
 			mcp.Description("Transport request number"),
 		),
+		mcp.WithString("method",
+			mcp.Description("For CLAS only: update only this method (source must be METHOD...ENDMETHOD block). Method must already exist in the class."),
+		),
 	), s.handleWriteSource)
 }
 
@@ -422,10 +428,12 @@ func (s *Server) handleGetSource(ctx context.Context, request mcp.CallToolReques
 
 	parent, _ := request.Params.Arguments["parent"].(string)
 	include, _ := request.Params.Arguments["include"].(string)
+	method, _ := request.Params.Arguments["method"].(string)
 
 	opts := &adt.GetSourceOptions{
 		Parent:  parent,
 		Include: include,
+		Method:  method,
 	}
 
 	source, err := s.adtClient.GetSource(ctx, objectType, name, opts)
@@ -458,12 +466,14 @@ func (s *Server) handleWriteSource(ctx context.Context, request mcp.CallToolRequ
 	packageName, _ := request.Params.Arguments["package"].(string)
 	testSource, _ := request.Params.Arguments["test_source"].(string)
 	transport, _ := request.Params.Arguments["transport"].(string)
+	method, _ := request.Params.Arguments["method"].(string)
 
 	opts := &adt.WriteSourceOptions{
 		Description: description,
 		Package:     packageName,
 		TestSource:  testSource,
 		Transport:   transport,
+		Method:      method,
 	}
 
 	if mode != "" {

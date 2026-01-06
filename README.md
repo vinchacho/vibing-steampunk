@@ -11,6 +11,14 @@
 
 ## What's New
 
+**v2.21.0** - Method-Level Source Operations
+- **GetSource with `method`**: Returns only the `METHOD...ENDMETHOD` block (~50 lines vs 1000+)
+- **EditSource with `method`**: Constrains find/replace to specific method - no accidental edits elsewhere
+- **WriteSource with `method`**: Replace only one method implementation (method must exist)
+- **95% Token Reduction**: Work with individual methods instead of entire classes
+- **AI-Optimized**: Faster responses, more precise edits, safer refactoring
+- See [Method-Level Operations Report](reports/2026-01-06-001-method-level-source-operations.md)
+
 **v2.20.0** - CLI Mode & Multi-System Management
 - **CLI Subcommands**: `vsp search`, `vsp source`, `vsp export`, `vsp systems` - direct ABAP operations without MCP
 - **System Profiles**: `.vsp.json` config file for managing multiple SAP systems

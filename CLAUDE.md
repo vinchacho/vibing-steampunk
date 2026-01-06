@@ -434,53 +434,47 @@ pipeline := dsl.RAPPipeline(client, "./src/", "$ZRAY", "ZTRAVEL_SB")
 
 ---
 
-## Last Session Reference (2025-12-23)
+## Last Session Reference (2026-01-06)
 
-### Objective: Install Tools Upsert Logic - COMPLETED ✅
+### Objective: Method-Level Source Operations - COMPLETED ✅
 
-Fixed package and object existence checks in InstallDummyTest and InstallZADTVSP tools to use proper upsert strategy.
+Added `method` parameter support to GetSource, EditSource, and WriteSource for working with individual class methods instead of entire classes.
 
 ### What Was Completed
 
-1. ✅ **Package Existence Check Fixed** - `GetPackage` returns empty URI when package doesn't exist; now checks `pkg.URI != ""`
-2. ✅ **InstallDummyTest Upsert** - Pre-checks interface/class existence, reports CREATE vs UPDATE
-3. ✅ **InstallZADTVSP Upsert** - Same package existence fix applied
-4. ✅ **check_only Mode Enhanced** - Shows `[CREATE]` or `[UPDATE]` for each object
-5. ✅ **Tested on a4h-110** - Both tools work correctly after fixes
-
-### Bug Fixed
-
-**Root cause**: `GetPackage` API returns a minimal response with empty `URI` field when package doesn't exist (no error). The old check `if err == nil` was giving false positives.
-
-**Solution**: Check `pkg.URI != ""` to verify package actually exists.
+1. ✅ **GetSource with `method`** - Returns only the `METHOD...ENDMETHOD` block
+2. ✅ **EditSource with `method`** - Constrains find/replace to specific method
+3. ✅ **WriteSource with `method`** - Replace only one method implementation (NEW)
+4. ✅ **95% Token Reduction** - Work with ~50 lines instead of 1000+ for large classes
+5. ✅ **All Tests Pass** - Unit tests and integration tests verified
 
 ### Files Updated
 
 | File | Changes |
 |------|---------|
-| `internal/mcp/server.go` | Fixed package checks in both Install tools, added object pre-checks |
+| `pkg/adt/workflows.go` | Added `Method` to WriteSourceOptions/Result, `writeClassMethodUpdate()` |
+| `internal/mcp/handlers_codeintel.go` | Added `method` parameter to WriteSource tool |
 
-### Test Results on a4h-110
-
-```
-InstallDummyTest - 8/8 steps passed
-InstallZADTVSP - 6/6 objects deployed
-```
-
-### Code Pattern (for future reference)
+### Usage Examples
 
 ```go
-// Proper package existence check
-pkg, err := s.adtClient.GetPackage(ctx, packageName)
-packageExists := err == nil && pkg.URI != "" // URI empty = doesn't exist
+// Get only one method (95% smaller response)
+source, _ := client.GetSource(ctx, "CLAS", "ZCL_TEST", &GetSourceOptions{Method: "CALCULATE"})
 
-// Object existence check
-results, _ := s.adtClient.SearchObject(ctx, objectName, 1)
-objectExists := len(results) > 0 && results[0].Name == objectName
+// Edit within one method (prevents accidental changes elsewhere)
+result, _ := client.EditSourceWithOptions(ctx, url, old, new, &EditSourceOptions{Method: "PROCESS"})
+
+// Replace entire method implementation
+result, _ := client.WriteSource(ctx, "CLAS", "ZCL_TEST", methodSource, &WriteSourceOptions{Method: "HANDLE_REQUEST"})
 ```
 
-### Previous Session: abapGit WebSocket Integration
+### Why This Matters
 
-- GitTypes/GitExport tools (158 object types)
-- Nested JSON parsing fix in APC handler
-- Tool group "G" for disabling Git tools
+- **Token Efficiency**: AI context reduced by 95% for method-level work
+- **Precision**: No risk of unintended edits in other methods
+- **Safety**: Method must exist - prevents creating methods in wrong places
+
+### Previous Session: Install Tools Upsert Logic
+
+- Fixed package/object existence checks
+- Proper `[CREATE]` vs `[UPDATE]` reporting

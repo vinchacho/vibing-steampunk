@@ -125,6 +125,75 @@ func (c *Client) GetClassSource(ctx context.Context, className string) (string, 
 	return sources["main"], nil
 }
 
+// GetClassMethods retrieves the list of methods in a class with their source line boundaries.
+// This is useful for method-level source operations (GetSource with method, EditSource with method).
+func (c *Client) GetClassMethods(ctx context.Context, className string) ([]MethodInfo, error) {
+	className = strings.ToUpper(className)
+
+	// Fetch objectstructure endpoint
+	path := fmt.Sprintf("/sap/bc/adt/oo/classes/%s/objectstructure", url.PathEscape(className))
+	resp, err := c.transport.Request(ctx, path, &RequestOptions{
+		Method: http.MethodGet,
+		Accept: "application/vnd.sap.adt.objectstructure.v2+xml",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("getting class object structure: %w", err)
+	}
+
+	structure, err := ParseClassObjectStructure(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("parsing class object structure: %w", err)
+	}
+
+	return structure.GetMethods(), nil
+}
+
+// GetClassMethodSource retrieves the source code of a specific method in a class.
+// Returns only the METHOD...ENDMETHOD block for the specified method.
+func (c *Client) GetClassMethodSource(ctx context.Context, className, methodName string) (string, error) {
+	className = strings.ToUpper(className)
+	methodName = strings.ToUpper(methodName)
+
+	// Get method boundaries
+	methods, err := c.GetClassMethods(ctx, className)
+	if err != nil {
+		return "", fmt.Errorf("getting class methods: %w", err)
+	}
+
+	// Find the specified method
+	var method *MethodInfo
+	for i := range methods {
+		if methods[i].Name == methodName {
+			method = &methods[i]
+			break
+		}
+	}
+	if method == nil {
+		return "", fmt.Errorf("method %s not found in class %s", methodName, className)
+	}
+
+	if method.ImplementationStart == 0 || method.ImplementationEnd == 0 {
+		return "", fmt.Errorf("method %s has no implementation", methodName)
+	}
+
+	// Get full class source
+	fullSource, err := c.GetClassSource(ctx, className)
+	if err != nil {
+		return "", fmt.Errorf("getting class source: %w", err)
+	}
+
+	// Extract method lines
+	lines := strings.Split(fullSource, "\n")
+	if method.ImplementationEnd > len(lines) {
+		return "", fmt.Errorf("method line range (%d-%d) exceeds source lines (%d)",
+			method.ImplementationStart, method.ImplementationEnd, len(lines))
+	}
+
+	// Line numbers are 1-based, slice indices are 0-based
+	methodLines := lines[method.ImplementationStart-1 : method.ImplementationEnd]
+	return strings.Join(methodLines, "\n"), nil
+}
+
 // --- Interface Operations ---
 
 // GetInterface retrieves the source code of an ABAP interface.
