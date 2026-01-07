@@ -124,7 +124,10 @@ CLASS zcl_vsp_rfc_service IMPLEMENTATION.
     " Call ZADT_CL_TADIR_MOVE to perform the move
     DATA lv_result TYPE string.
     TRY.
-        lv_result = zadt_cl_tadir_move=>move_object_and_commit(
+        " Note: Use move_object (not move_object_and_commit) because
+        " COMMIT WORK is not allowed in APC/WebSocket context.
+        " The change persists via TR_TADIR_INTERFACE's internal handling.
+        lv_result = zadt_cl_tadir_move=>move_object(
           iv_pgmid    = CONV #( lv_pgmid )
           iv_object   = CONV #( lv_object )
           iv_obj_name = CONV #( lv_obj_name )
