@@ -1,5 +1,7 @@
 # Vibing Steampunk (vsp)
 
+[![DeepWiki](https://img.shields.io/badge/DeepWiki-vinchacho%2Fvibing--steampunk-blue.svg)](https://deepwiki.com/vinchacho/vibing-steampunk)
+
 **AI-Agentic Development Unlocked for ABAP** — ECC, S/4HANA, everywhere ADT is available.
 
 > **ADT ↔ MCP Bridge**: Gives Claude (and other AI assistants) full access to SAP ADT APIs.
