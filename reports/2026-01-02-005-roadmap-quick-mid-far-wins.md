@@ -11,7 +11,7 @@
 
 | Rank | Feature | Effort | Impact | Status | Notes |
 |------|---------|--------|--------|--------|-------|
-| 1 | `vsp debug` CLI | 2h | High | **Done** | Interactive CLI debugger ([commit f1358e9](https://github.com/oisee/vibing-steampunk/commit/f1358e9)) |
+| 1 | `vsp debug` CLI | 2h | High | **Done** | Interactive CLI debugger ([commit f1358e9](https://github.com/vinchacho/vibing-steampunk/commit/f1358e9)) |
 | 2 | RunReport via FM | 2h | Medium | Planned | Create ZADT_RUN_REPORT FM to avoid APC blocking |
 | 3 | GetMessages tool | 1h | Medium | **Done** | Read message class texts (SE91/MSAG) - v2.19 |
 | 4 | CompareSource tool | 2h | Medium | **Done** | Unified diff for any two objects - v2.19 |

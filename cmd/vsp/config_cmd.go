@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/oisee/vibing-steampunk/pkg/config"
+	"github.com/vinchacho/vibing-steampunk/pkg/config"
 	"github.com/spf13/cobra"
 )
 

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/oisee/vibing-steampunk/pkg/cache"
+	"github.com/vinchacho/vibing-steampunk/pkg/cache"
 )
 
 // Example demonstrates basic in-memory cache usage

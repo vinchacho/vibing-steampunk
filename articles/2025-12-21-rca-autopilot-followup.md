@@ -73,7 +73,7 @@ This is step one of a bigger plan. The roadmap includes:
 
 ```bash
 # Download v2.13.0
-curl -LO https://github.com/oisee/vibing-steampunk/releases/download/v2.13.0/vsp-linux-amd64
+curl -LO https://github.com/vinchacho/vibing-steampunk/releases/download/v2.13.0/vsp-linux-amd64
 chmod +x vsp-linux-amd64
 
 # Connect to your SAP system
@@ -97,7 +97,7 @@ The combination tells you what you *need to test*.
 
 ---
 
-**GitHub**: [oisee/vibing-steampunk](https://github.com/oisee/vibing-steampunk)
-**Release**: [v2.13.0](https://github.com/oisee/vibing-steampunk/releases/tag/v2.13.0)
+**GitHub**: [vinchacho/vibing-steampunk](https://github.com/vinchacho/vibing-steampunk)
+**Release**: [v2.13.0](https://github.com/vinchacho/vibing-steampunk/releases/tag/v2.13.0)
 
 #ABAP #SAP #RCA #AI #ClaudeCode #DevTools #OpenSource

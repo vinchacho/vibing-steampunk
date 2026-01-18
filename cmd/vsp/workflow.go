@@ -7,8 +7,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/oisee/vibing-steampunk/pkg/adt"
-	"github.com/oisee/vibing-steampunk/pkg/dsl"
+	"github.com/vinchacho/vibing-steampunk/pkg/adt"
+	"github.com/vinchacho/vibing-steampunk/pkg/dsl"
 	"github.com/spf13/cobra"
 )
 

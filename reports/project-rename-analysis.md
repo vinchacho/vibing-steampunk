@@ -8,17 +8,17 @@
 
 **Current State:**
 - Project name: `vibing-steampunk`
-- Repository: `github.com/oisee/vibing-steampunk`
+- Repository: `github.com/vinchacho/vibing-steampunk`
 - Binary name: `vsp`
-- Go module: `github.com/oisee/vibing-steampunk`
+- Go module: `github.com/vinchacho/vibing-steampunk`
 - 26 occurrences of "vibing-steampunk"
 - 114 occurrences of "vsp"
 
 **Proposed State:**
 - Project name: `vibing-steampunk` (recommended) or `vibing-steam-punk`
-- Repository: `github.com/oisee/vibing-steampunk`
+- Repository: `github.com/vinchacho/vibing-steampunk`
 - Binary name: `vsp`
-- Go module: `github.com/oisee/vibing-steampunk`
+- Go module: `github.com/vinchacho/vibing-steampunk`
 
 ## Naming Convention Analysis
 
@@ -111,7 +111,7 @@ pkg/cache/README.md            # Cache documentation
 4. `Makefile` - Build output directory (if needed)
 
 **Changes:**
-- `github.com/oisee/vibing-steampunk` → `github.com/oisee/vibing-steampunk`
+- `github.com/vinchacho/vibing-steampunk` → `github.com/vinchacho/vibing-steampunk`
 - Repository path references
 - Documentation URLs
 
@@ -179,10 +179,10 @@ git mv cmd/vsp cmd/vsp
 ### Step 3: Update Go Module Path
 ```bash
 # Update go.mod
-sed -i 's|github.com/oisee/vibing-steampunk|github.com/oisee/vibing-steampunk|g' go.mod
+sed -i 's|github.com/vinchacho/vibing-steampunk|github.com/vinchacho/vibing-steampunk|g' go.mod
 
 # Update all Go imports
-find . -name "*.go" -type f -exec sed -i 's|github.com/oisee/vibing-steampunk|github.com/oisee/vibing-steampunk|g' {} +
+find . -name "*.go" -type f -exec sed -i 's|github.com/vinchacho/vibing-steampunk|github.com/vinchacho/vibing-steampunk|g' {} +
 
 # Tidy module
 go mod tidy
@@ -229,7 +229,7 @@ git push origin main
 2. Rename repository: `vibing-steampunk` → `vibing-steampunk`
 3. Update local remote:
    ```bash
-   git remote set-url origin https://github.com/oisee/vibing-steampunk.git
+   git remote set-url origin https://github.com/vinchacho/vibing-steampunk.git
    ```
 4. Verify: `git remote -v`
 
@@ -246,7 +246,7 @@ gh release create v2.1.0 build/* --title "v2.1.0: Project Rename" --notes "..."
 ### Breaking Changes
 1. **Import paths**: External projects importing this module will break
    - **Mitigation**: We're not a library (we're a binary), minimal impact
-2. **Old URLs**: `github.com/oisee/vibing-steampunk` in bookmarks
+2. **Old URLs**: `github.com/vinchacho/vibing-steampunk` in bookmarks
    - **Mitigation**: GitHub redirects automatically
 3. **Binary name**: Scripts calling `vsp` will break
    - **Mitigation**: Document in release notes, update `.mcp.json` examples

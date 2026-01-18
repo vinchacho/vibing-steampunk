@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/oisee/vibing-steampunk/pkg/adt"
+	"github.com/vinchacho/vibing-steampunk/pkg/adt"
 )
 
 // ImportFile represents a file to import with its detected type.

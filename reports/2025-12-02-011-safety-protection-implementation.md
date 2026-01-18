@@ -170,7 +170,7 @@ vsp
 ### Example 3: Programmatic Usage (Go Library)
 
 ```go
-import "github.com/oisee/vibing-steampunk/pkg/adt"
+import "github.com/vinchacho/vibing-steampunk/pkg/adt"
 
 // Create client with custom safety config
 safety := adt.SafetyConfig{

@@ -461,7 +461,7 @@ This is a **milestone** in the truest sense - a significant step forward that en
 ---
 
 **Release:** v1.5.0
-**Release URL:** https://github.com/oisee/vibing-steampunk/releases/tag/v1.5.0
+**Release URL:** https://github.com/vinchacho/vibing-steampunk/releases/tag/v1.5.0
 **Commit:** eeea7d9
 **Date:** 2025-12-03
 **Author:** Claude Code + Alice (human collaboration)

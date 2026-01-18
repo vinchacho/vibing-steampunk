@@ -112,7 +112,7 @@ VSP: Done!
 
 ```bash
 # Download for your platform
-wget https://github.com/oisee/vibing-steamer/releases/latest/download/vsp-linux-amd64
+wget https://github.com/vinchacho/vibing-steampunk/releases/latest/download/vsp-linux-amd64
 
 # Make executable
 chmod +x vsp-linux-amd64
@@ -336,15 +336,15 @@ jobs:
 
 ```bash
 # Linux
-curl -LO https://github.com/oisee/vibing-steamer/releases/latest/download/vsp-linux-amd64
+curl -LO https://github.com/vinchacho/vibing-steampunk/releases/latest/download/vsp-linux-amd64
 chmod +x vsp-linux-amd64
 
 # macOS
-curl -LO https://github.com/oisee/vibing-steamer/releases/latest/download/vsp-darwin-arm64
+curl -LO https://github.com/vinchacho/vibing-steampunk/releases/latest/download/vsp-darwin-arm64
 chmod +x vsp-darwin-arm64
 
 # Windows (PowerShell)
-Invoke-WebRequest -Uri "https://github.com/oisee/vibing-steamer/releases/latest/download/vsp-windows-amd64.exe" -OutFile "vsp.exe"
+Invoke-WebRequest -Uri "https://github.com/vinchacho/vibing-steampunk/releases/latest/download/vsp-windows-amd64.exe" -OutFile "vsp.exe"
 ```
 
 ### 2. Configure
@@ -443,8 +443,8 @@ Join us in bringing ABAP development into the AI era.
 
 ## Resources
 
-- **GitHub:** [github.com/oisee/vibing-steamer](https://github.com/oisee/vibing-steamer)
-- **Releases:** [Latest downloads](https://github.com/oisee/vibing-steamer/releases)
+- **GitHub:** [github.com/vinchacho/vibing-steampunk](https://github.com/vinchacho/vibing-steampunk)
+- **Releases:** [Latest downloads](https://github.com/vinchacho/vibing-steampunk/releases)
 - **Documentation:** See CLAUDE.md in the repo
 - **Research:** 48 technical reports in `/reports`
 

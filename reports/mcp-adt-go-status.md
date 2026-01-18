@@ -2,7 +2,7 @@
 
 **Date:** 2025-12-05
 **Project:** Go port of SAP ADT API as MCP server
-**Repository:** https://github.com/oisee/vibing-steampunk
+**Repository:** https://github.com/vinchacho/vibing-steampunk
 
 ---
 
@@ -293,8 +293,8 @@ See [ARCHITECTURE.md](../ARCHITECTURE.md) for detailed architecture documentatio
 
 ```
 $ go test ./...
-ok  	github.com/oisee/vibing-steampunk/internal/mcp	0.010s
-ok  	github.com/oisee/vibing-steampunk/pkg/adt	    0.013s
+ok  	github.com/vinchacho/vibing-steampunk/internal/mcp	0.010s
+ok  	github.com/vinchacho/vibing-steampunk/pkg/adt	    0.013s
 
 $ go test -tags=integration ./pkg/adt/
 PASS (24 integration tests against real SAP system)

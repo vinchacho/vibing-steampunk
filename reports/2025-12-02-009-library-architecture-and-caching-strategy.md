@@ -189,8 +189,8 @@ package main
 
 import (
     "context"
-    "github.com/oisee/vibing-steampunk/pkg/apisurface"
-    "github.com/oisee/vibing-steampunk/pkg/adt"
+    "github.com/vinchacho/vibing-steampunk/pkg/apisurface"
+    "github.com/vinchacho/vibing-steampunk/pkg/adt"
 )
 
 func main() {

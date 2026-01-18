@@ -302,7 +302,7 @@ Navigate backwards through execution → `rewind 5` → find exactly where thing
 
 ```bash
 # Download
-curl -LO https://github.com/oisee/vibing-steampunk/releases/download/v2.16.0/vsp-linux-amd64
+curl -LO https://github.com/vinchacho/vibing-steampunk/releases/download/v2.16.0/vsp-linux-amd64
 chmod +x vsp-linux-amd64
 
 # Configure

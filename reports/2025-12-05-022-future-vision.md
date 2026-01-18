@@ -326,7 +326,7 @@ VSP is not just a tool - it's a bridge to the future of enterprise development.
 
 ## Get Involved
 
-- **GitHub:** github.com/oisee/vibing-steamer
+- **GitHub:** github.com/vinchacho/vibing-steampunk
 - **Documentation:** See CLAUDE.md and reports/
 - **Contribute:** Workflow templates, tool ideas, bug reports welcome
 

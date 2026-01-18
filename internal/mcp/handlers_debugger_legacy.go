@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/oisee/vibing-steampunk/pkg/adt"
+	"github.com/vinchacho/vibing-steampunk/pkg/adt"
 )
 
 // --- Legacy REST-based Debugger Handlers (fallback) ---

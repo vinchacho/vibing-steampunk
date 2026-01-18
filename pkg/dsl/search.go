@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/oisee/vibing-steampunk/pkg/adt"
+	"github.com/vinchacho/vibing-steampunk/pkg/adt"
 )
 
 // SearchBuilder provides a fluent interface for searching ABAP objects.

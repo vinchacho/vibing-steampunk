@@ -9,7 +9,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/oisee/vibing-steampunk/pkg/adt"
+	"github.com/vinchacho/vibing-steampunk/pkg/adt"
 )
 
 // Workflow represents a YAML-defined workflow.

@@ -350,7 +350,7 @@ Specialized agents (Investigator, Historian, Theorist, Fixer) working together o
 
 ```bash
 # Download
-curl -LO https://github.com/oisee/vibing-steampunk/releases/download/v2.15.1/vsp-linux-amd64
+curl -LO https://github.com/vinchacho/vibing-steampunk/releases/download/v2.15.1/vsp-linux-amd64
 chmod +x vsp-linux-amd64
 
 # Configure
@@ -386,7 +386,7 @@ The foundation is complete. The possibilities are endless. The future of ABAP de
 
 ## Resources
 
-- **Release:** [v2.15.1](https://github.com/oisee/vibing-steampunk/releases/tag/v2.15.1)
+- **Release:** [v2.15.1](https://github.com/vinchacho/vibing-steampunk/releases/tag/v2.15.1)
 - **Observations Since v2.12.5:** [Full Changelog](./2025-12-22-observations-since-v2.12.5.md)
 - **AMDP Investigation:** [Report](./2025-12-22-001-amdp-debugging-investigation.md)
 - **Vision Document:** [VISION.md](../VISION.md)

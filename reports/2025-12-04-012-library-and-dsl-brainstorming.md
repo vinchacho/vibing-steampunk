@@ -131,7 +131,7 @@ Use Go's functional programming features to create expressive APIs.
 ```go
 package main
 
-import "github.com/oisee/vibing-steampunk/pkg/dsl"
+import "github.com/vinchacho/vibing-steampunk/pkg/dsl"
 
 func main() {
     sap := dsl.Connect("http://host:50000").

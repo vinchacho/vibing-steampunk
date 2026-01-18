@@ -14,7 +14,7 @@
 | Reports go stale | `ls reports/ \| wc -l` = **99 reports** | VERIFIED |
 | Missing lint commands | Makefile has `make lint` (golangci-lint), `make fmt` (gofumpt) | VERIFIED |
 | Missing single test cmd | Not in CLAUDE.md | VERIFIED |
-| Module path missing | `go.mod`: `github.com/oisee/vibing-steampunk` | VERIFIED |
+| Module path missing | `go.mod`: `github.com/vinchacho/vibing-steampunk` | VERIFIED |
 | golangci-lint config exists | `.golangci.yml` present with 15 linters | VERIFIED |
 
 ---
@@ -79,7 +79,7 @@ make fmt
 make test-coverage
 ```
 
-**Module path:** `github.com/oisee/vibing-steampunk`
+**Module path:** `github.com/vinchacho/vibing-steampunk`
 
 ---
 

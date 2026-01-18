@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/joho/godotenv"
-	"github.com/oisee/vibing-steampunk/internal/mcp"
-	"github.com/oisee/vibing-steampunk/pkg/adt"
+	"github.com/vinchacho/vibing-steampunk/internal/mcp"
+	"github.com/vinchacho/vibing-steampunk/pkg/adt"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )

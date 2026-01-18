@@ -211,7 +211,7 @@ The difference?
 
 ## Get Involved
 
-- **GitHub**: [oisee/vibing-steampunk](https://github.com/oisee/vibing-steampunk)
+- **GitHub**: [vinchacho/vibing-steampunk](https://github.com/vinchacho/vibing-steampunk)
 - **Reports**: See `reports/` for detailed technical designs
 - **Discussions**: Open an issue to propose ideas
 

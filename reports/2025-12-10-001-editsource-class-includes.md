@@ -127,8 +127,8 @@ vsp WriteSource \
 ## All Tests Pass
 
 ```
-ok  github.com/oisee/vibing-steampunk/internal/mcp   0.005s
-ok  github.com/oisee/vibing-steampunk/pkg/adt        0.034s
-ok  github.com/oisee/vibing-steampunk/pkg/cache      0.234s
-ok  github.com/oisee/vibing-steampunk/pkg/dsl        0.006s
+ok  github.com/vinchacho/vibing-steampunk/internal/mcp   0.005s
+ok  github.com/vinchacho/vibing-steampunk/pkg/adt        0.034s
+ok  github.com/vinchacho/vibing-steampunk/pkg/cache      0.234s
+ok  github.com/vinchacho/vibing-steampunk/pkg/dsl        0.006s
 ```

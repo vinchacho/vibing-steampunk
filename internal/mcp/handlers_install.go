@@ -8,9 +8,9 @@ import (
 	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
-	embedded "github.com/oisee/vibing-steampunk/embedded/abap"
-	"github.com/oisee/vibing-steampunk/embedded/deps"
-	"github.com/oisee/vibing-steampunk/pkg/adt"
+	embedded "github.com/vinchacho/vibing-steampunk/embedded/abap"
+	"github.com/vinchacho/vibing-steampunk/embedded/deps"
+	"github.com/vinchacho/vibing-steampunk/pkg/adt"
 )
 
 // --- Install Handlers ---

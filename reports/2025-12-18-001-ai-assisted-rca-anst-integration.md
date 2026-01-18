@@ -489,7 +489,7 @@ The vision is achievable, but the path diverges: stay vanilla (web search hybrid
 
 ## References
 
-- [vsp MCP Server](https://github.com/oisee/vibing-steampunk) - Current implementation
+- [vsp MCP Server](https://github.com/vinchacho/vibing-steampunk) - Current implementation
 - SAP Note 1915529 - "How to use ANST"
 - SAP Help: [Automated Note Search](https://help.sap.com/docs/SAP_SOLUTION_MANAGER/0bece7ae50c742f6a8e7669a3ce17bef/4520c8abdb1a5b30e10000000a42189c.html)
 - ADR-001: WebSocket/APC for Stateful Operations

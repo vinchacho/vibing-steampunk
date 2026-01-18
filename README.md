@@ -168,11 +168,11 @@
 
 ```bash
 # Download from releases
-curl -LO https://github.com/oisee/vibing-steampunk/releases/latest/download/vsp-linux-amd64
+curl -LO https://github.com/vinchacho/vibing-steampunk/releases/latest/download/vsp-linux-amd64
 chmod +x vsp-linux-amd64
 
 # Or build from source
-git clone https://github.com/oisee/vibing-steampunk.git && cd vibing-steampunk
+git clone https://github.com/vinchacho/vibing-steampunk.git && cd vibing-steampunk
 make build
 ```
 

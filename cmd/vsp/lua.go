@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/oisee/vibing-steampunk/pkg/scripting"
+	"github.com/vinchacho/vibing-steampunk/pkg/scripting"
 	"github.com/spf13/cobra"
 )
 

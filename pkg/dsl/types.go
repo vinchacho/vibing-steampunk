@@ -6,7 +6,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/oisee/vibing-steampunk/pkg/adt"
+	"github.com/vinchacho/vibing-steampunk/pkg/adt"
 )
 
 // ObjectRef represents a reference to an ABAP object.
