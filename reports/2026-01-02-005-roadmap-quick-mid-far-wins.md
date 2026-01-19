@@ -28,13 +28,16 @@
 | 1 | ATC Integration | 2d | High | Planned | Code quality checks (RunATCCheck exists, add findings navigation) |
 | 2 | Basic DAP Adapter | 3d | High | Planned | Attach mode for VS Code ([Report 004](./2026-01-02-004-dap-abap-debugging-vision.md)) |
 | 3 | Transport Workflow | 2d | High | Planned | Create→AddObjects→Release flow |
-| 4 | Code Coverage | 2d | Medium | Planned | Unit test coverage reporting |
-| 5 | Conditional Breakpoints | 1d | Medium | Planned | Extend SetBreakpoint with conditions |
-| 6 | RefactorRename tool | 2d | Medium | Planned | Rename symbol across references |
-| 7 | abapGit Import (pull) | 3d | Medium | Planned | Deploy from ZIP/GitHub URL |
-| 8 | Batch RunUnitTests | 1d | Medium | Planned | Parallel test execution with aggregated results |
-| 9 | Watch Expressions | 1d | Low | Planned | Evaluate expressions during debug |
-| 10 | Documentation Generator | 2d | Low | Planned | Generate markdown from ABAP Doc comments |
+| 4 | ABAP Documentation Lookup | 2d | Medium | Planned | Retrieve ABAP Doc comments for symbols |
+| 5 | Code Coverage | 2d | Medium | Planned | Unit test coverage reporting |
+| 6 | Conditional Breakpoints | 1d | Medium | Planned | Extend SetBreakpoint with conditions |
+| 7 | RefactorRename tool | 2d | Medium | Planned | Rename symbol across references |
+| 8 | Fragment Mappings | 2d | Medium | Planned | Map source code fragments to runtime objects |
+| 9 | Reentrance Tickets | 1d | Medium | Planned | Generate reentrance tickets for special scenarios |
+| 10 | abapGit Import (pull) | 3d | Medium | Planned | Deploy from ZIP/GitHub URL |
+| 11 | Batch RunUnitTests | 1d | Medium | Planned | Parallel test execution with aggregated results |
+| 12 | Watch Expressions | 1d | Low | Planned | Evaluate expressions during debug |
+| 13 | Documentation Generator | 2d | Low | Planned | Generate markdown from ABAP Doc comments |
 
 ## Far Wins (1-2 weeks each)
 
@@ -44,10 +47,13 @@
 | 2 | Test Intelligence | 1w | High | Designed | [Report 008](./2025-12-02-008-test-intelligence-plan.md): smart test selection |
 | 3 | Full DAP + Shared State | 2w | High | Planned | Complete VS Code debugging experience |
 | 4 | VS Code Extension | 2w | High | Planned | ABAP syntax, outline, diagnostics |
-| 5 | Standard API Scraper | 1w | Medium | Designed | [Report 006](./2025-12-02-006-standard-api-surface-scraper.md): SAP standard usage patterns |
-| 6 | Multi-System Support | 1w | Medium | Planned | DEV→QA→PROD transport chains |
-| 7 | AI Code Review | 1w | Medium | Planned | Automated review with SAP best practices |
-| 8 | Performance Profiler UI | 2w | Low | Planned | Visual trace analysis (ATRA data) |
+| 5 | Revision History | 1w | Medium | Planned | Version control visibility for objects |
+| 6 | Enhanced Transport Operations | 1w | Medium | Planned | Set owner, add users, delete transports, transport references |
+| 7 | Standard API Scraper | 1w | Medium | Designed | [Report 006](./2025-12-02-006-standard-api-surface-scraper.md): SAP standard usage patterns |
+| 8 | Multi-System Support | 1w | Medium | Planned | DEV→QA→PROD transport chains |
+| 9 | AI Code Review | 1w | Medium | Planned | Automated review with SAP best practices |
+| 10 | Advanced Refactoring Suite | 2w | Medium | Planned | Extract method, inline variable, move to class, comprehensive rename |
+| 11 | Performance Profiler UI | 2w | Low | Planned | Visual trace analysis (ATRA data) |
 
 ---
 
