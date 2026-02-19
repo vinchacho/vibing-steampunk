@@ -713,10 +713,11 @@ See [WebSocket Handler Report](reports/2025-12-18-002-websocket-rfc-handler.md) 
 
 | Document | Description |
 |----------|-------------|
+| [docs/architecture.md](docs/architecture.md) | Architecture diagrams (Mermaid) |
 | [README_TOOLS.md](README_TOOLS.md) | Complete tool reference (94 tools) |
 | [MCP_USAGE.md](MCP_USAGE.md) | AI agent usage guide |
 | [docs/DSL.md](docs/DSL.md) | DSL & workflow documentation |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | Technical architecture |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Technical architecture (detailed) |
 | [CLAUDE.md](CLAUDE.md) | AI development guidelines |
 | [embedded/abap/README.md](embedded/abap/README.md) | WebSocket handler deployment |
 | [Roadmap: Quick/Mid/Far Wins](reports/2026-01-02-005-roadmap-quick-mid-far-wins.md) | Prioritized feature backlog |
