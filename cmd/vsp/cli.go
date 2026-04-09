@@ -41,6 +41,9 @@ type systemParams struct {
 	CookieString string
 
 	TransportAttribute string
+
+	Cache     bool
+	CachePath string
 }
 
 // resolveSystemParams resolves system parameters from --system flag or env vars.
@@ -88,6 +91,8 @@ func resolveSystemParams(cmd *cobra.Command) (*systemParams, error) {
 			CookieFile:         sys.CookieFile,
 			CookieString:       sys.CookieString,
 			TransportAttribute: sys.TransportAttribute,
+			Cache:              sys.Cache,
+			CachePath:          sys.CachePath,
 		}, nil
 	}
 
@@ -103,6 +108,12 @@ func resolveSystemParams(cmd *cobra.Command) (*systemParams, error) {
 		return nil, fmt.Errorf("SAP_USER and SAP_PASSWORD required")
 	}
 
+	cacheEnabled := strings.EqualFold(os.Getenv("VSP_CACHE"), "true")
+	cachePath := os.Getenv("VSP_CACHE_PATH")
+	if cacheEnabled && cachePath == "" {
+		cachePath = ".vsp-cache/default.db"
+	}
+
 	return &systemParams{
 		URL:                url,
 		User:               user,
@@ -111,6 +122,8 @@ func resolveSystemParams(cmd *cobra.Command) (*systemParams, error) {
 		Language:           getEnvOrDefault("SAP_LANGUAGE", "EN"),
 		Insecure:           os.Getenv("SAP_INSECURE") == "true",
 		TransportAttribute: resolveTransportAttributeFromEnv(),
+		Cache:              cacheEnabled,
+		CachePath:          cachePath,
 	}, nil
 }
 

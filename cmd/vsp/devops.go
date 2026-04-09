@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -129,6 +130,222 @@ Examples:
   vsp health CLAS ZCL_ORDER_SERVICE
   vsp health --package '$ZDEV' --format json`,
 	RunE: runHealth,
+}
+
+func runBoundaries(cmd *cobra.Command, args []string) error {
+	params, err := resolveSystemParams(cmd)
+	if err != nil {
+		return err
+	}
+	client, err := getClient(params)
+	if err != nil {
+		return err
+	}
+
+	pkg := strings.ToUpper(strings.TrimSpace(args[0]))
+	format, _ := cmd.Flags().GetString("format")
+	report, _ := cmd.Flags().GetString("report")
+	exact, _ := cmd.Flags().GetBool("exact")
+	ctx := context.Background()
+
+	// Resolve scope
+	scope, err := AcquirePackageScope(ctx, client, pkg, !exact)
+	if err != nil {
+		return fmt.Errorf("scope resolution failed: %w", err)
+	}
+	fmt.Fprintf(os.Stderr, "Analyzing boundaries for %s (%d packages in scope)...\n", pkg, len(scope.Packages))
+
+	// Collect objects
+	objects, err := AcquirePackageObjects(ctx, client, ScopeToWhere(scope))
+	if err != nil {
+		return err
+	}
+	if len(objects) == 0 {
+		return fmt.Errorf("package %s is empty or not found", pkg)
+	}
+
+	// Build graph
+	g := graph.New()
+	count := 0
+	for _, obj := range objects {
+		if !IsSourceBearing(obj.Type) {
+			continue
+		}
+		fmt.Fprintf(os.Stderr, "\r  [%d] %s %-40s", count+1, obj.Type, obj.Name)
+		source, err := client.GetSource(ctx, obj.Type, obj.Name, nil)
+		if err != nil || source == "" {
+			continue
+		}
+		nodeID := graph.NodeID(obj.Type, obj.Name)
+		g.AddNode(&graph.Node{ID: nodeID, Name: obj.Name, Type: obj.Type, Package: obj.Package})
+		edges := graph.ExtractDepsFromSource(source, nodeID)
+		dynEdges := graph.ExtractDynamicCalls(source, nodeID)
+		for _, e := range append(edges, dynEdges...) {
+			g.AddEdge(e)
+			parts := strings.SplitN(e.To, ":", 2)
+			if len(parts) == 2 {
+				g.AddNode(&graph.Node{ID: e.To, Name: parts[1], Type: parts[0]})
+			}
+		}
+		count++
+	}
+	if count > 0 {
+		fmt.Fprintf(os.Stderr, "\n")
+	}
+	fmt.Fprintf(os.Stderr, "Resolving target packages...\n")
+	resolvePackagesCLI(ctx, client, g)
+
+	// Analyze crossings
+	crossReport := graph.AnalyzeCrossings(g, scope, nil)
+
+	// Handle --report flag
+	if report != "" {
+		baseName := strings.ReplaceAll(pkg, "$", "_") + "_boundaries"
+		extMap := map[string]string{".md": "md", ".html": "html", ".dot": "dot", ".puml": "plantuml", ".graphml": "graphml"}
+		bareMap := map[string]string{"md": ".md", "html": ".html", "dot": ".dot", "plantuml": ".puml", "graphml": ".graphml"}
+		detected := false
+		for ext, fmt := range extMap {
+			if strings.HasSuffix(report, ext) {
+				format = fmt
+				detected = true
+				break
+			}
+		}
+		if !detected {
+			if extSuffix, ok := bareMap[report]; ok {
+				format = report
+				report = baseName + extSuffix
+			} else {
+				return fmt.Errorf("unsupported report format %q (want md, html, dot, plantuml, graphml)", report)
+			}
+		}
+		f, err := os.Create(report)
+		if err != nil {
+			return fmt.Errorf("creating report file: %w", err)
+		}
+		defer f.Close()
+		origStdout := os.Stdout
+		os.Stdout = f
+		switch format {
+		case "md":
+			printCrossingsMD(crossReport)
+		case "html":
+			mmd := graph.CrossingToMermaid(crossReport, scope)
+			title := fmt.Sprintf("Boundaries: %s", pkg)
+			fmt.Println(graph.WrapMermaidHTML(title, mmd))
+		case "dot":
+			fmt.Println(graph.ToDOT(g, pkg))
+		case "plantuml":
+			fmt.Println(graph.ToPlantUML(g, pkg))
+		case "graphml":
+			fmt.Println(graph.ToGraphML(g))
+		}
+		os.Stdout = origStdout
+		fmt.Fprintf(os.Stderr, "Report saved to %s\n", report)
+		return nil
+	}
+
+	switch format {
+	case "json":
+		data, err := json.MarshalIndent(crossReport, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(data))
+	case "md":
+		printCrossingsMD(crossReport)
+	case "mermaid":
+		fmt.Println(graph.CrossingToMermaid(crossReport, scope))
+	case "html":
+		mmd := graph.CrossingToMermaid(crossReport, scope)
+		title := fmt.Sprintf("Boundaries: %s", pkg)
+		fmt.Println(graph.WrapMermaidHTML(title, mmd))
+	case "dot":
+		fmt.Println(graph.ToDOT(g, pkg))
+	case "plantuml":
+		fmt.Println(graph.ToPlantUML(g, pkg))
+	case "graphml":
+		fmt.Println(graph.ToGraphML(g))
+	default:
+		printCrossingsText(crossReport)
+	}
+	return nil
+}
+
+func printCrossingsText(report *graph.CrossingReport) {
+	fmt.Printf("Boundaries: %s (%d packages, %d objects scanned)\n\n",
+		report.RootPackage, report.PackagesScanned, report.ObjectsScanned)
+
+	if len(report.Entries) == 0 {
+		fmt.Println("No crossings found.")
+		return
+	}
+
+	dirOrder := []graph.CrossingDirection{
+		graph.CrossSibling, graph.CrossDownward, graph.CrossCommonDown,
+		graph.CrossExternal, graph.CrossUpward, graph.CrossUpwardSkip, graph.CrossCommon,
+	}
+	for _, dir := range dirOrder {
+		var entries []graph.CrossingEntry
+		for _, e := range report.Entries {
+			if e.Direction == dir {
+				entries = append(entries, e)
+			}
+		}
+		if len(entries) == 0 {
+			continue
+		}
+		marker := "OK  "
+		if dir == graph.CrossSibling || dir == graph.CrossDownward || dir == graph.CrossCommonDown {
+			marker = "BAD "
+		}
+		if dir == graph.CrossExternal {
+			marker = "WARN"
+		}
+		fmt.Printf("  %s  %-12s %d\n", marker, dir, len(entries))
+		for _, e := range entries {
+			ref := e.EdgeKind
+			if e.RefDetail != "" {
+				ref += " " + e.RefDetail
+			}
+			fmt.Printf("         %s → %s  %s %s → %s %s  [%s]\n",
+				e.SourcePackage, e.TargetPackage, e.SourceType, e.SourceObject, e.TargetType, e.TargetObject, ref)
+		}
+		fmt.Println()
+	}
+
+	if len(report.Circular) > 0 {
+		fmt.Println("  CIRCULAR:")
+		for _, c := range report.Circular {
+			fmt.Printf("    %s\n", c)
+		}
+		fmt.Println()
+	}
+
+	bad := report.Sibling + report.Downward + report.CommonDown
+	if bad == 0 && len(report.Circular) == 0 {
+		fmt.Println("CLEAN — no directional violations")
+	} else {
+		fmt.Printf("%d violations (sibling: %d, downward: %d, common_down: %d)\n",
+			bad, report.Sibling, report.Downward, report.CommonDown)
+	}
+}
+
+var boundariesCmd = &cobra.Command{
+	Use:   "boundaries <package>",
+	Short: "Analyze directional package boundary crossings",
+	Long: `Analyze cross-package dependencies with directional classification.
+
+Directions: UPWARD (ok), COMMON (ok), SIBLING (bad), DOWNWARD (bad),
+COMMON_DOWN (bad), EXTERNAL (info). Detects circular sibling dependencies.
+
+Examples:
+  vsp boundaries '$ZDEV'
+  vsp boundaries '$ZDEV' --format json
+  vsp boundaries '$ZDEV' --report md
+  vsp boundaries '$ZDEV' --exact`,
+	Args: cobra.ExactArgs(1),
+	RunE: runBoundaries,
 }
 
 // --- deploy command ---
@@ -281,7 +498,9 @@ func init() {
 	// Health flags
 	healthCmd.Flags().String("package", "", "Analyze an entire package")
 	healthCmd.Flags().Bool("fast", false, "Faster package snapshot: skip expensive checks like tests and boundary scan")
-	healthCmd.Flags().String("format", "text", "Output format: text or json")
+	healthCmd.Flags().Bool("details", false, "Show full details: failing test methods, ATC findings")
+	healthCmd.Flags().String("format", "text", "Output format: text, json, md, or html")
+	healthCmd.Flags().String("report", "", "Generate report file: md or html (writes to <package>.<ext>)")
 
 	// ATC flags
 	atcCmd.Flags().String("variant", "", "ATC check variant (empty for system default)")
@@ -311,6 +530,10 @@ func init() {
 	rootCmd.AddCommand(testCmd)
 	rootCmd.AddCommand(atcCmd)
 	rootCmd.AddCommand(healthCmd)
+	boundariesCmd.Flags().String("format", "text", "Output format: text, json, md, mermaid, html, dot, plantuml, graphml")
+	boundariesCmd.Flags().String("report", "", "Save report to file: md or filename.md")
+	boundariesCmd.Flags().Bool("exact", false, "Check only the exact package, no subpackages")
+	rootCmd.AddCommand(boundariesCmd)
 	rootCmd.AddCommand(deployCmd)
 	rootCmd.AddCommand(transportCmd)
 	rootCmd.AddCommand(contextCmd)
@@ -654,9 +877,12 @@ type cliHealthSignal struct {
 }
 
 type cliHealthResult struct {
-	Scope   cliHealthScope              `json:"scope"`
-	Summary cliHealthSummary            `json:"summary"`
-	Signals map[string]cliHealthSignal  `json:"signals"`
+	Scope            cliHealthScope              `json:"scope"`
+	Summary          cliHealthSummary            `json:"summary"`
+	Signals          map[string]cliHealthSignal  `json:"signals"`
+	TestDetails      *adt.UnitTestResult         `json:"testDetails,omitempty"`
+	ATCDetails       *adt.ATCWorklist            `json:"atcDetails,omitempty"`
+	CrossingDetails  *graph.CrossingReport       `json:"crossingDetails,omitempty"`
 }
 
 func runHealth(cmd *cobra.Command, args []string) error {
@@ -671,8 +897,26 @@ func runHealth(cmd *cobra.Command, args []string) error {
 
 	packageName, _ := cmd.Flags().GetString("package")
 	fast, _ := cmd.Flags().GetBool("fast")
+	details, _ := cmd.Flags().GetBool("details")
 	format, _ := cmd.Flags().GetString("format")
+	report, _ := cmd.Flags().GetString("report")
 	packageName = strings.ToUpper(strings.TrimSpace(packageName))
+
+	// --report: either bare format ("md"/"html") or a filename ("report.md"/"out.html")
+	var reportFile string
+	if report != "" {
+		if strings.HasSuffix(report, ".md") {
+			format = "md"
+			reportFile = report
+		} else if strings.HasSuffix(report, ".html") {
+			format = "html"
+			reportFile = report
+		} else if report == "md" || report == "html" {
+			format = report
+		} else {
+			return fmt.Errorf("unsupported report format %q (want md, html, or filename ending in .md/.html)", report)
+		}
+	}
 
 	result := &cliHealthResult{Signals: make(map[string]cliHealthSignal)}
 
@@ -691,16 +935,52 @@ func runHealth(cmd *cobra.Command, args []string) error {
 
 	result.Summary = summarizeCLIHealth(result.Signals)
 
-	if format == "json" {
+	// --report: redirect output to file
+	if report != "" {
+		fileName := reportFile
+		if fileName == "" {
+			scopeName := packageName
+			if scopeName == "" {
+				scopeName = strings.ToUpper(args[0]) + "_" + strings.ToUpper(args[1])
+			}
+			fileName = strings.ReplaceAll(scopeName, "$", "_") + "." + format
+		}
+		f, err := os.Create(fileName)
+		if err != nil {
+			return fmt.Errorf("creating report file: %w", err)
+		}
+		defer f.Close()
+		// Redirect stdout to the file for the print functions
+		origStdout := os.Stdout
+		os.Stdout = f
+		defer func() { os.Stdout = origStdout }()
+
+		switch format {
+		case "md":
+			printCLIHealthMD(result)
+		case "html":
+			printCLIHealthHTML(result)
+		}
+
+		os.Stdout = origStdout
+		fmt.Fprintf(os.Stderr, "Report saved to %s\n", fileName)
+		return nil
+	}
+
+	switch format {
+	case "json":
 		data, err := json.MarshalIndent(result, "", "  ")
 		if err != nil {
 			return err
 		}
 		fmt.Println(string(data))
-		return nil
+	case "md":
+		printCLIHealthMD(result)
+	case "html":
+		printCLIHealthHTML(result)
+	default:
+		printCLIHealth(result, details)
 	}
-
-	printCLIHealth(result)
 	return nil
 }
 
@@ -710,16 +990,22 @@ func populatePackageHealthCLI(ctx context.Context, client *adt.Client, pkg strin
 		result.Signals["boundaries"] = cliHealthSignal{Status: "SKIPPED", Details: map[string]any{"reason": "fast mode"}}
 	} else {
 		fmt.Fprintf(os.Stderr, "  [1/4] Running tests...\n")
-		result.Signals["tests"] = collectPackageTestsCLI(ctx, client, pkg)
+		testSignal, testDetails := collectPackageTestsWithDetails(ctx, client, pkg)
+		result.Signals["tests"] = testSignal
+		result.TestDetails = testDetails
 		fmt.Fprintf(os.Stderr, "  [2/4] Checking boundaries...\n")
-		result.Signals["boundaries"] = collectPackageBoundariesCLI(ctx, client, pkg)
+		boundarySignal, crossingReport := collectPackageBoundariesWithDetails(ctx, client, pkg)
+		result.Signals["boundaries"] = boundarySignal
+		result.CrossingDetails = crossingReport
 	}
 	step := 3
 	if fast {
 		step = 1
 	}
 	fmt.Fprintf(os.Stderr, "  [%d/%d] Running ATC...\n", step, step+1)
-	result.Signals["atc"] = collectPackageATCCLI(ctx, client, pkg)
+	atcSignal, atcDetails := collectPackageATCWithDetails(ctx, client, pkg)
+	result.Signals["atc"] = atcSignal
+	result.ATCDetails = atcDetails
 	fmt.Fprintf(os.Stderr, "  [%d/%d] Checking staleness...\n", step+1, step+1)
 	result.Signals["staleness"] = collectPackageStalenessCLI(ctx, client, pkg)
 }
@@ -751,36 +1037,34 @@ func collectObjectTestsCLI(ctx context.Context, client *adt.Client, objType, obj
 	return cliHealthSignal{Status: status, Details: map[string]any{"classes": classes, "methods": methods, "alerts": alerts}}
 }
 
-func collectPackageTestsCLI(ctx context.Context, client *adt.Client, pkg string) cliHealthSignal {
-	content, err := client.GetPackage(ctx, pkg)
+func collectPackageTestsWithDetails(ctx context.Context, client *adt.Client, pkg string) (cliHealthSignal, *adt.UnitTestResult) {
+	// Resolve full package hierarchy (TDEVC + prefix fallback) — same as slim/changelog.
+	// SAP's test runner only covers the exact package, not subpackages.
+	scope, err := AcquirePackageScope(ctx, client, pkg, true)
 	if err != nil {
-		return cliHealthSignal{Status: "ERROR", Details: map[string]any{"message": err.Error()}}
+		return cliHealthSignal{Status: "ERROR", Details: map[string]any{"message": err.Error()}}, nil
 	}
-	var testClasses []adt.PackageObject
-	for _, obj := range content.Objects {
-		if strings.ToUpper(obj.Type) == "CLAS" && graph.IsTestCaller(obj.Name, "") {
-			testClasses = append(testClasses, obj)
-		}
+
+	packages := scope.Packages
+	if len(packages) == 0 {
+		packages = []string{strings.ToUpper(pkg)}
 	}
-	if len(testClasses) == 0 {
-		return cliHealthSignal{Status: "NONE"}
-	}
-	limit := 5
-	if len(testClasses) < limit {
-		limit = len(testClasses)
-	}
+
+	combined := &adt.UnitTestResult{}
 	totalClasses, totalMethods, totalAlerts := 0, 0, 0
-	for _, obj := range testClasses[:limit] {
-		objectURL := buildObjectURL("CLAS", obj.Name)
+	for _, p := range packages {
+		objectURL := fmt.Sprintf("/sap/bc/adt/packages/%s", p)
 		result, err := client.RunUnitTests(ctx, objectURL, nil)
 		if err != nil {
 			continue
 		}
+		combined.Classes = append(combined.Classes, result.Classes...)
 		c, m, a := summarizeUnitTestsCLI(result)
 		totalClasses += c
 		totalMethods += m
 		totalAlerts += a
 	}
+
 	status := "PASS"
 	if totalClasses == 0 {
 		status = "NONE"
@@ -789,12 +1073,11 @@ func collectPackageTestsCLI(ctx context.Context, client *adt.Client, pkg string)
 		status = "FAIL"
 	}
 	return cliHealthSignal{Status: status, Details: map[string]any{
-		"test_classes_found": len(testClasses),
-		"test_classes_run":   limit,
-		"classes":            totalClasses,
-		"methods":            totalMethods,
-		"alerts":             totalAlerts,
-	}}
+		"packages_scanned": len(packages),
+		"classes":          totalClasses,
+		"methods":          totalMethods,
+		"alerts":           totalAlerts,
+	}}, combined
 }
 
 func summarizeUnitTestsCLI(result *adt.UnitTestResult) (classCount, methodCount, alertCount int) {
@@ -829,18 +1112,18 @@ func collectObjectATCCLI(ctx context.Context, client *adt.Client, objType, objNa
 	return cliHealthSignal{Status: status, Details: map[string]any{"findings": total, "errors": errors, "warnings": warnings, "infos": infos}}
 }
 
-func collectPackageATCCLI(ctx context.Context, client *adt.Client, pkg string) cliHealthSignal {
+func collectPackageATCWithDetails(ctx context.Context, client *adt.Client, pkg string) (cliHealthSignal, *adt.ATCWorklist) {
 	objectURL := fmt.Sprintf("/sap/bc/adt/packages/%s", strings.ToUpper(pkg))
 	result, err := client.RunATCCheck(ctx, objectURL, "", 200)
 	if err != nil {
-		return cliHealthSignal{Status: "ERROR", Details: map[string]any{"message": err.Error()}}
+		return cliHealthSignal{Status: "ERROR", Details: map[string]any{"message": err.Error()}}, nil
 	}
 	total, errors, warnings, infos := summarizeATCCLI(result)
 	status := "CLEAN"
 	if total > 0 {
 		status = "FINDINGS"
 	}
-	return cliHealthSignal{Status: status, Details: map[string]any{"findings": total, "errors": errors, "warnings": warnings, "infos": infos}}
+	return cliHealthSignal{Status: status, Details: map[string]any{"findings": total, "errors": errors, "warnings": warnings, "infos": infos}}, result
 }
 
 func summarizeATCCLI(result *adt.ATCWorklist) (total, errors, warnings, infos int) {
@@ -896,27 +1179,35 @@ func collectObjectBoundariesCLI(ctx context.Context, client *adt.Client, objType
 	return cliHealthSignal{Status: status, Details: map[string]any{"violations": report.Violations, "crossed_packages": report.CrossedPackages, "dynamic": report.Dynamic}}
 }
 
-func collectPackageBoundariesCLI(ctx context.Context, client *adt.Client, pkg string) cliHealthSignal {
-	content, err := client.GetPackage(ctx, pkg)
+func collectPackageBoundariesWithDetails(ctx context.Context, client *adt.Client, pkg string) (cliHealthSignal, *graph.CrossingReport) {
+	// Resolve full package hierarchy
+	scope, err := AcquirePackageScope(ctx, client, pkg, true)
 	if err != nil {
-		return cliHealthSignal{Status: "ERROR", Details: map[string]any{"message": err.Error()}}
+		return cliHealthSignal{Status: "ERROR", Details: map[string]any{"message": err.Error()}}, nil
 	}
+
+	// Collect objects from all packages in scope
+	objects, err := AcquirePackageObjects(ctx, client, ScopeToWhere(scope))
+	if err != nil {
+		return cliHealthSignal{Status: "ERROR", Details: map[string]any{"message": err.Error()}}, nil
+	}
+
 	g := graph.New()
 	count := 0
-	for _, obj := range content.Objects {
-		objType := strings.ToUpper(obj.Type)
-		if objType != "CLAS" && objType != "PROG" && objType != "INTF" {
+	for _, obj := range objects {
+		if !IsSourceBearing(obj.Type) {
 			continue
 		}
-		if count >= 30 {
+		if count >= 50 {
 			break
 		}
-		source, err := client.GetSource(ctx, objType, obj.Name, nil)
+		fmt.Fprintf(os.Stderr, "\r    [%d] %s %-40s", count+1, obj.Type, obj.Name)
+		source, err := client.GetSource(ctx, obj.Type, obj.Name, nil)
 		if err != nil || source == "" {
 			continue
 		}
-		nodeID := graph.NodeID(objType, obj.Name)
-		g.AddNode(&graph.Node{ID: nodeID, Name: obj.Name, Type: objType, Package: pkg})
+		nodeID := graph.NodeID(obj.Type, obj.Name)
+		g.AddNode(&graph.Node{ID: nodeID, Name: obj.Name, Type: obj.Type, Package: obj.Package})
 		edges := graph.ExtractDepsFromSource(source, nodeID)
 		dynEdges := graph.ExtractDynamicCalls(source, nodeID)
 		for _, e := range append(edges, dynEdges...) {
@@ -928,13 +1219,50 @@ func collectPackageBoundariesCLI(ctx context.Context, client *adt.Client, pkg st
 		}
 		count++
 	}
+	if count > 0 {
+		fmt.Fprintf(os.Stderr, "\r")
+	}
+
+	// Resolve packages for target nodes
 	resolvePackagesCLI(ctx, client, g)
-	report := g.CheckBoundaries(pkg, &graph.BoundaryOptions{IncludeDynamic: true})
+
+	// Directional crossing analysis
+	report := graph.AnalyzeCrossings(g, scope, nil)
+
 	status := "CLEAN"
-	if report.Violations > 0 {
+	if report.Sibling > 0 || report.Downward > 0 || report.CommonDown > 0 || len(report.Circular) > 0 {
 		status = "VIOLATIONS"
 	}
-	return cliHealthSignal{Status: status, Details: map[string]any{"scanned_objects": count, "violations": report.Violations, "crossed_packages": report.CrossedPackages}}
+
+	details := map[string]any{
+		"packages_scanned": report.PackagesScanned,
+		"objects_scanned":  count,
+	}
+	if report.Upward > 0 {
+		details["upward"] = report.Upward
+	}
+	if report.Common > 0 {
+		details["common"] = report.Common
+	}
+	if report.Sibling > 0 {
+		details["sibling"] = report.Sibling
+	}
+	if report.Downward > 0 {
+		details["downward"] = report.Downward
+	}
+	if report.CommonDown > 0 {
+		details["common_down"] = report.CommonDown
+	}
+	if report.External > 0 {
+		details["external"] = report.External
+	}
+	if report.Dynamic > 0 {
+		details["dynamic"] = report.Dynamic
+	}
+	if len(report.Circular) > 0 {
+		details["circular"] = report.Circular
+	}
+	return cliHealthSignal{Status: status, Details: details}, report
 }
 
 func collectObjectStalenessCLI(ctx context.Context, client *adt.Client, objType, objName string) cliHealthSignal {
@@ -1031,7 +1359,7 @@ func summarizeCLIHealth(signals map[string]cliHealthSignal) cliHealthSummary {
 	return cliHealthSummary{Status: "GOOD", Headline: "No major health issues detected"}
 }
 
-func printCLIHealth(result *cliHealthResult) {
+func printCLIHealth(result *cliHealthResult, details bool) {
 	switch result.Scope.Kind {
 	case "package":
 		fmt.Printf("Health: package %s\n", result.Scope.Package)
@@ -1051,6 +1379,433 @@ func printCLIHealth(result *cliHealthResult) {
 		}
 		fmt.Println()
 	}
+
+	if !details {
+		return
+	}
+
+	// Detailed test results — grouped by parent object
+	if result.TestDetails != nil && len(result.TestDetails.Classes) > 0 {
+		fmt.Printf("\n--- Test Details ---\n\n")
+		groups := groupTestsByParent(result.TestDetails.Classes)
+		for _, g := range groups {
+			fmt.Printf("  %s\n", g.label)
+			for _, class := range g.classes {
+				className := class.Name
+				if className == "" {
+					className = "(anonymous)"
+				}
+				fmt.Printf("    %s\n", className)
+				for _, method := range class.TestMethods {
+					status := "PASS"
+					if len(method.Alerts) > 0 {
+						status = "FAIL"
+					}
+					fmt.Printf("      %-4s  %s (%.3fs)\n", status, method.Name, method.ExecutionTime)
+					for _, alert := range method.Alerts {
+						fmt.Printf("            %s: %s\n", alert.Kind, alert.Title)
+						for _, d := range alert.Details {
+							fmt.Printf("              %s\n", d)
+						}
+					}
+				}
+				for _, alert := range class.Alerts {
+					fmt.Printf("      ALERT %s: %s\n", alert.Kind, alert.Title)
+				}
+			}
+			fmt.Println()
+		}
+	}
+
+	// Detailed ATC findings
+	if result.ATCDetails != nil && len(result.ATCDetails.Objects) > 0 {
+		fmt.Printf("\n--- ATC Findings ---\n\n")
+		for _, obj := range result.ATCDetails.Objects {
+			if len(obj.Findings) == 0 {
+				continue
+			}
+			fmt.Printf("  %s %s (%d findings)\n", obj.Type, obj.Name, len(obj.Findings))
+			for _, f := range obj.Findings {
+				prio := "INFO"
+				switch f.Priority {
+				case 1:
+					prio = "ERROR"
+				case 2:
+					prio = "WARN"
+				}
+				loc := ""
+				if f.Location != "" {
+					loc = " @ " + f.Location
+				}
+				fmt.Printf("    %-5s  %s — %s%s\n", prio, f.CheckTitle, f.MessageTitle, loc)
+			}
+		}
+	}
+
+	// Detailed crossing entries
+	if result.CrossingDetails != nil && len(result.CrossingDetails.Entries) > 0 {
+		fmt.Printf("\n--- Boundary Crossings ---\n\n")
+
+		// Group by direction, show violations first
+		dirOrder := []graph.CrossingDirection{
+			graph.CrossSibling, graph.CrossDownward, graph.CrossCommonDown,
+			graph.CrossExternal, graph.CrossUpward, graph.CrossUpwardSkip, graph.CrossCommon,
+		}
+		for _, dir := range dirOrder {
+			var entries []graph.CrossingEntry
+			for _, e := range result.CrossingDetails.Entries {
+				if e.Direction == dir {
+					entries = append(entries, e)
+				}
+			}
+			if len(entries) == 0 {
+				continue
+			}
+			marker := "OK"
+			if dir == graph.CrossSibling || dir == graph.CrossDownward || dir == graph.CrossCommonDown {
+				marker = "BAD"
+			}
+			if dir == graph.CrossExternal {
+				marker = "WARN"
+			}
+			fmt.Printf("  %s  %s (%d)\n", marker, dir, len(entries))
+			for _, e := range entries {
+				ref := e.EdgeKind
+				if e.RefDetail != "" {
+					ref += " " + e.RefDetail
+				}
+				fmt.Printf("    %s → %s  %s %s → %s %s  [%s]\n",
+					e.SourcePackage, e.TargetPackage, e.SourceType, e.SourceObject, e.TargetType, e.TargetObject, ref)
+			}
+		}
+
+		if len(result.CrossingDetails.Circular) > 0 {
+			fmt.Printf("\n  CIRCULAR dependencies:\n")
+			for _, c := range result.CrossingDetails.Circular {
+				fmt.Printf("    %s\n", c)
+			}
+		}
+	}
+}
+
+type testGroup struct {
+	label   string
+	classes []adt.UnitTestClass
+}
+
+func groupTestsByParent(classes []adt.UnitTestClass) []testGroup {
+	order := []string{}
+	groups := map[string]*testGroup{}
+	for _, c := range classes {
+		key := c.ParentName
+		if key == "" {
+			key = "(unknown)"
+		}
+		g, ok := groups[key]
+		if !ok {
+			label := key
+			if c.ParentType != "" {
+				label = c.ParentType + " " + key
+			}
+			g = &testGroup{label: label}
+			groups[key] = g
+			order = append(order, key)
+		}
+		g.classes = append(g.classes, c)
+	}
+	result := make([]testGroup, 0, len(order))
+	for _, k := range order {
+		result = append(result, *groups[k])
+	}
+	return result
+}
+
+func printCLIHealthMD(result *cliHealthResult) {
+	scope := result.Scope.Package
+	if scope == "" {
+		scope = result.Scope.ObjectType + " " + result.Scope.ObjectName
+	}
+	fmt.Printf("# Health Report: %s\n\n", scope)
+	fmt.Printf("**%s** — %s\n\n", result.Summary.Status, result.Summary.Headline)
+
+	fmt.Print("## Signals\n\n")
+	fmt.Println("| Signal | Status | Details |")
+	fmt.Println("|--------|--------|---------|")
+	for _, key := range []string{"tests", "atc", "boundaries", "staleness"} {
+		sig, ok := result.Signals[key]
+		if !ok {
+			continue
+		}
+		detailStr := ""
+		if len(sig.Details) > 0 {
+			parts := make([]string, 0, len(sig.Details))
+			for k, v := range sig.Details {
+				parts = append(parts, fmt.Sprintf("%s: %v", k, v))
+			}
+			sort.Strings(parts)
+			detailStr = strings.Join(parts, ", ")
+		}
+		fmt.Printf("| %s | %s | %s |\n", key, sig.Status, detailStr)
+	}
+
+	if result.TestDetails != nil && len(result.TestDetails.Classes) > 0 {
+		fmt.Print("\n## Test Details\n\n")
+		groups := groupTestsByParent(result.TestDetails.Classes)
+		for _, g := range groups {
+			fmt.Printf("### %s\n\n", g.label)
+			for _, class := range g.classes {
+				className := class.Name
+				if className == "" {
+					className = "(anonymous)"
+				}
+				fmt.Printf("#### %s\n\n", className)
+				fmt.Println("| Method | Status | Time | Details |")
+				fmt.Println("|--------|--------|------|---------|")
+				for _, method := range class.TestMethods {
+					status := "PASS"
+					detail := ""
+					if len(method.Alerts) > 0 {
+						status = "FAIL"
+						parts := make([]string, 0)
+						for _, a := range method.Alerts {
+							parts = append(parts, fmt.Sprintf("%s: %s", a.Kind, a.Title))
+							parts = append(parts, a.Details...)
+						}
+						detail = strings.Join(parts, "; ")
+					}
+					fmt.Printf("| %s | %s | %.3fs | %s |\n", method.Name, status, method.ExecutionTime, detail)
+				}
+				fmt.Println()
+			}
+		}
+	}
+
+	if result.ATCDetails != nil && len(result.ATCDetails.Objects) > 0 {
+		fmt.Print("\n## ATC Findings\n\n")
+		for _, obj := range result.ATCDetails.Objects {
+			if len(obj.Findings) == 0 {
+				continue
+			}
+			fmt.Printf("### %s %s\n\n", obj.Type, obj.Name)
+			fmt.Println("| Priority | Check | Message | Location |")
+			fmt.Println("|----------|-------|---------|----------|")
+			for _, f := range obj.Findings {
+				prio := "Info"
+				switch f.Priority {
+				case 1:
+					prio = "Error"
+				case 2:
+					prio = "Warning"
+				}
+				fmt.Printf("| %s | %s | %s | %s |\n", prio, f.CheckTitle, f.MessageTitle, f.Location)
+			}
+			fmt.Println()
+		}
+	}
+
+	printCrossingsMD(result.CrossingDetails)
+}
+
+func printCrossingsMD(report *graph.CrossingReport) {
+	if report == nil || len(report.Entries) == 0 {
+		return
+	}
+	fmt.Print("\n## Boundary Crossings\n\n")
+
+	dirOrder := []graph.CrossingDirection{
+		graph.CrossSibling, graph.CrossDownward, graph.CrossCommonDown,
+		graph.CrossExternal, graph.CrossUpward, graph.CrossUpwardSkip, graph.CrossCommon,
+	}
+	for _, dir := range dirOrder {
+		var entries []graph.CrossingEntry
+		for _, e := range report.Entries {
+			if e.Direction == dir {
+				entries = append(entries, e)
+			}
+		}
+		if len(entries) == 0 {
+			continue
+		}
+		verdict := "OK"
+		if dir == graph.CrossSibling || dir == graph.CrossDownward || dir == graph.CrossCommonDown {
+			verdict = "BAD"
+		}
+		if dir == graph.CrossExternal {
+			verdict = "WARN"
+		}
+		fmt.Printf("### %s — %s (%d)\n\n", dir, verdict, len(entries))
+		fmt.Println("| From Pkg | Source Object | To Pkg | Target Object | Edge | Detail |")
+		fmt.Println("|----------|---------------|--------|---------------|------|--------|")
+		for _, e := range entries {
+			fmt.Printf("| %s | %s %s | %s | %s %s | %s | %s |\n",
+				e.SourcePackage, e.SourceType, e.SourceObject,
+				e.TargetPackage, e.TargetType, e.TargetObject,
+				e.EdgeKind, e.RefDetail)
+		}
+		fmt.Println()
+	}
+
+	if len(report.Circular) > 0 {
+		fmt.Print("### Circular Dependencies\n\n")
+		for _, c := range report.Circular {
+			fmt.Printf("- %s\n", c)
+		}
+		fmt.Println()
+	}
+}
+
+func printCLIHealthHTML(result *cliHealthResult) {
+	scope := result.Scope.Package
+	if scope == "" {
+		scope = result.Scope.ObjectType + " " + result.Scope.ObjectName
+	}
+
+	fmt.Println(`<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<title>Health Report</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 960px; margin: 2em auto; padding: 0 1em; color: #333; }
+  h1 { border-bottom: 2px solid #ddd; padding-bottom: 0.3em; }
+  h2 { margin-top: 1.5em; color: #555; }
+  h3 { color: #666; }
+  table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+  th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+  th { background: #f5f5f5; }
+  .PASS, .CLEAN, .GOOD { color: #2e7d32; }
+  .FAIL, .BAD, .ERROR { color: #c62828; }
+  .WARN, .FINDINGS { color: #ef6c00; }
+  .NONE, .UNKNOWN, .SKIPPED { color: #757575; }
+  .prio-error { color: #c62828; font-weight: bold; }
+  .prio-warn { color: #ef6c00; }
+  .prio-info { color: #1565c0; }
+</style>
+</head><body>`)
+
+	fmt.Printf("<h1>Health Report: %s</h1>\n", scope)
+	fmt.Printf("<p><strong class=%q>%s</strong> — %s</p>\n", result.Summary.Status, result.Summary.Status, result.Summary.Headline)
+
+	fmt.Println("<h2>Signals</h2>")
+	fmt.Println("<table><tr><th>Signal</th><th>Status</th><th>Details</th></tr>")
+	for _, key := range []string{"tests", "atc", "boundaries", "staleness"} {
+		sig, ok := result.Signals[key]
+		if !ok {
+			continue
+		}
+		detailStr := ""
+		if len(sig.Details) > 0 {
+			parts := make([]string, 0, len(sig.Details))
+			for k, v := range sig.Details {
+				parts = append(parts, fmt.Sprintf("%s: %v", k, v))
+			}
+			sort.Strings(parts)
+			detailStr = strings.Join(parts, ", ")
+		}
+		fmt.Printf("<tr><td>%s</td><td class=%q>%s</td><td>%s</td></tr>\n", key, sig.Status, sig.Status, detailStr)
+	}
+	fmt.Println("</table>")
+
+	if result.TestDetails != nil && len(result.TestDetails.Classes) > 0 {
+		fmt.Println("<h2>Test Details</h2>")
+		groups := groupTestsByParent(result.TestDetails.Classes)
+		for _, g := range groups {
+			fmt.Printf("<h3>%s</h3>\n", g.label)
+			for _, class := range g.classes {
+				className := class.Name
+				if className == "" {
+					className = "(anonymous)"
+				}
+				fmt.Printf("<h4>%s</h4>\n", className)
+				fmt.Println("<table><tr><th>Method</th><th>Status</th><th>Time</th><th>Details</th></tr>")
+				for _, method := range class.TestMethods {
+					status := "PASS"
+					detail := ""
+					if len(method.Alerts) > 0 {
+						status = "FAIL"
+						parts := make([]string, 0)
+						for _, a := range method.Alerts {
+							parts = append(parts, fmt.Sprintf("<strong>%s:</strong> %s", a.Kind, a.Title))
+							for _, d := range a.Details {
+								parts = append(parts, d)
+							}
+						}
+						detail = strings.Join(parts, "<br>")
+					}
+					fmt.Printf("<tr><td>%s</td><td class=%q>%s</td><td>%.3fs</td><td>%s</td></tr>\n", method.Name, status, status, method.ExecutionTime, detail)
+				}
+				fmt.Println("</table>")
+			}
+		}
+	}
+
+	if result.ATCDetails != nil && len(result.ATCDetails.Objects) > 0 {
+		fmt.Println("<h2>ATC Findings</h2>")
+		for _, obj := range result.ATCDetails.Objects {
+			if len(obj.Findings) == 0 {
+				continue
+			}
+			fmt.Printf("<h3>%s %s (%d findings)</h3>\n", obj.Type, obj.Name, len(obj.Findings))
+			fmt.Println("<table><tr><th>Priority</th><th>Check</th><th>Message</th><th>Location</th></tr>")
+			for _, f := range obj.Findings {
+				prio := "Info"
+				prioClass := "prio-info"
+				switch f.Priority {
+				case 1:
+					prio = "Error"
+					prioClass = "prio-error"
+				case 2:
+					prio = "Warning"
+					prioClass = "prio-warn"
+				}
+				fmt.Printf("<tr><td class=%q>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>\n", prioClass, prio, f.CheckTitle, f.MessageTitle, f.Location)
+			}
+			fmt.Println("</table>")
+		}
+	}
+
+	// Crossing details
+	if result.CrossingDetails != nil && len(result.CrossingDetails.Entries) > 0 {
+		fmt.Println("<h2>Boundary Crossings</h2>")
+		dirOrder := []graph.CrossingDirection{
+			graph.CrossSibling, graph.CrossDownward, graph.CrossCommonDown,
+			graph.CrossExternal, graph.CrossUpward, graph.CrossUpwardSkip, graph.CrossCommon,
+		}
+		for _, dir := range dirOrder {
+			var entries []graph.CrossingEntry
+			for _, e := range result.CrossingDetails.Entries {
+				if e.Direction == dir {
+					entries = append(entries, e)
+				}
+			}
+			if len(entries) == 0 {
+				continue
+			}
+			cssClass := "PASS"
+			if dir == graph.CrossSibling || dir == graph.CrossDownward || dir == graph.CrossCommonDown {
+				cssClass = "FAIL"
+			}
+			if dir == graph.CrossExternal {
+				cssClass = "WARN"
+			}
+			fmt.Printf("<h3 class=%q>%s (%d)</h3>\n", cssClass, dir, len(entries))
+			fmt.Println("<table><tr><th>From Pkg</th><th>Source</th><th>To Pkg</th><th>Target</th><th>Edge</th><th>Detail</th></tr>")
+			for _, e := range entries {
+				fmt.Printf("<tr><td>%s</td><td>%s %s</td><td>%s</td><td>%s %s</td><td>%s</td><td>%s</td></tr>\n",
+					e.SourcePackage, e.SourceType, e.SourceObject,
+					e.TargetPackage, e.TargetType, e.TargetObject,
+					e.EdgeKind, e.RefDetail)
+			}
+			fmt.Println("</table>")
+		}
+		if len(result.CrossingDetails.Circular) > 0 {
+			fmt.Println("<h3 class=\"FAIL\">Circular Dependencies</h3><ul>")
+			for _, c := range result.CrossingDetails.Circular {
+				fmt.Printf("<li>%s</li>\n", c)
+			}
+			fmt.Println("</ul>")
+		}
+	}
+
+	fmt.Println("</body></html>")
 }
 
 func resolvePackagesCLI(ctx context.Context, client *adt.Client, g *graph.Graph) {
@@ -1065,25 +1820,30 @@ func resolvePackagesCLI(ctx context.Context, client *adt.Client, g *graph.Graph)
 	if len(names) == 0 {
 		return
 	}
-	if len(names) > 100 {
-		names = names[:100]
-	}
-	quoted := make([]string, len(names))
-	for i, n := range names {
-		quoted[i] = "'" + strings.ToUpper(n) + "'"
-	}
-	query := fmt.Sprintf("SELECT obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN (%s)", strings.Join(quoted, ","))
-	result, err := client.RunQuery(ctx, query, 0)
-	if err != nil || result == nil {
-		return
-	}
-	for _, row := range result.Rows {
-		objName := strings.ToUpper(strings.TrimSpace(fmt.Sprintf("%v", row["OBJ_NAME"])))
-		devclass := strings.ToUpper(strings.TrimSpace(fmt.Sprintf("%v", row["DEVCLASS"])))
-		if nodes, ok := nodesByName[objName]; ok {
-			for _, n := range nodes {
-				if n.Package == "" {
-					n.Package = devclass
+	// Batch TADIR lookups in chunks of 100 to avoid query size limits
+	for start := 0; start < len(names); start += 100 {
+		end := start + 100
+		if end > len(names) {
+			end = len(names)
+		}
+		chunk := names[start:end]
+		quoted := make([]string, len(chunk))
+		for i, n := range chunk {
+			quoted[i] = "'" + strings.ToUpper(n) + "'"
+		}
+		query := fmt.Sprintf("SELECT obj_name, devclass FROM tadir WHERE pgmid = 'R3TR' AND obj_name IN (%s)", strings.Join(quoted, ","))
+		result, err := client.RunQuery(ctx, query, len(chunk)*3)
+		if err != nil || result == nil {
+			continue
+		}
+		for _, row := range result.Rows {
+			objName := strings.ToUpper(strings.TrimSpace(fmt.Sprintf("%v", row["OBJ_NAME"])))
+			devclass := strings.ToUpper(strings.TrimSpace(fmt.Sprintf("%v", row["DEVCLASS"])))
+			if nodes, ok := nodesByName[objName]; ok {
+				for _, n := range nodes {
+					if n.Package == "" {
+						n.Package = devclass
+					}
 				}
 			}
 		}
