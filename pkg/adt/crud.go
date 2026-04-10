@@ -286,12 +286,25 @@ func isLockConflictError(err error) bool {
 }
 
 // packageExists checks if a package exists in the system.
-// Returns true if package exists, false otherwise.
+// Returns true if package exists or if the check is inconclusive (API errors).
+// Only returns false when GetPackage succeeds but returns an empty/invalid result.
 // Uses GetPackage (nodestructure API) which passes the package name as a query
 // parameter, avoiding URL path encoding issues with $ in local package names.
 func (c *Client) packageExists(ctx context.Context, packageName string) bool {
-	_, err := c.GetPackage(ctx, packageName)
-	return err == nil
+	pkg, err := c.GetPackage(ctx, packageName)
+	if err != nil {
+		// API call failed — could be CSRF, auth, network, etc.
+		// Be optimistic: let the actual create call handle real errors
+		// rather than blocking on a false negative.
+		errStr := err.Error()
+		if strings.Contains(errStr, "404") || strings.Contains(errStr, "not found") {
+			return false
+		}
+		return true
+	}
+	// GetPackage succeeded but returned no objects and no sub-packages —
+	// still a valid (possibly empty) package
+	return pkg != nil
 }
 
 // CreateObject creates a new ABAP object.
