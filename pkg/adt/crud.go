@@ -113,8 +113,13 @@ func (c *Client) UnlockObject(ctx context.Context, objectURL string, lockHandle 
 // lockHandle is required (from LockObject)
 // transport is optional (for transportable objects)
 func (c *Client) UpdateSource(ctx context.Context, objectSourceURL string, source string, lockHandle string, transport string) error {
-	// Safety check
-	if err := c.checkSafety(OpUpdate, "UpdateSource"); err != nil {
+	// Unified mutation policy gate (op type + package + transport)
+	if err := c.checkMutation(ctx, MutationContext{
+		Op:        OpUpdate,
+		OpName:    "UpdateSource",
+		ObjectURL: objectSourceURL,
+		Transport: transport,
+	}); err != nil {
 		return err
 	}
 
@@ -286,12 +291,25 @@ func isLockConflictError(err error) bool {
 }
 
 // packageExists checks if a package exists in the system.
-// Returns true if package exists, false otherwise.
+// Returns true if package exists or if the check is inconclusive (API errors).
+// Only returns false when GetPackage succeeds but returns an empty/invalid result.
 // Uses GetPackage (nodestructure API) which passes the package name as a query
 // parameter, avoiding URL path encoding issues with $ in local package names.
 func (c *Client) packageExists(ctx context.Context, packageName string) bool {
-	_, err := c.GetPackage(ctx, packageName)
-	return err == nil
+	pkg, err := c.GetPackage(ctx, packageName)
+	if err != nil {
+		// API call failed — could be CSRF, auth, network, etc.
+		// Be optimistic: let the actual create call handle real errors
+		// rather than blocking on a false negative.
+		errStr := err.Error()
+		if strings.Contains(errStr, "404") || strings.Contains(errStr, "not found") {
+			return false
+		}
+		return true
+	}
+	// GetPackage succeeded but returned no objects and no sub-packages —
+	// still a valid (possibly empty) package
+	return pkg != nil
 }
 
 // CreateObject creates a new ABAP object.
@@ -299,11 +317,6 @@ func (c *Client) packageExists(ctx context.Context, packageName string) bool {
 // This prevents orphan ENQUEUE locks that SAP creates internally during CreateObject
 // before validating the request. These orphan locks can only be cleared via SM12.
 func (c *Client) CreateObject(ctx context.Context, opts CreateObjectOptions) error {
-	// Safety check
-	if err := c.checkSafety(OpCreate, "CreateObject"); err != nil {
-		return err
-	}
-
 	typeInfo, ok := objectTypes[opts.ObjectType]
 	if !ok {
 		return fmt.Errorf("unsupported object type: %s", opts.ObjectType)
@@ -312,13 +325,19 @@ func (c *Client) CreateObject(ctx context.Context, opts CreateObjectOptions) err
 	opts.Name = strings.ToUpper(opts.Name)
 	opts.PackageName = strings.ToUpper(opts.PackageName)
 
-	// Check package restrictions
 	// For package creation, check the package being created (opts.Name), not the parent (opts.PackageName)
 	packageToCheck := opts.PackageName
 	if opts.ObjectType == ObjectTypePackage {
 		packageToCheck = opts.Name
 	}
-	if err := c.checkPackageSafety(packageToCheck); err != nil {
+
+	// Unified mutation policy gate (op type + package + transport)
+	if err := c.checkMutation(ctx, MutationContext{
+		Op:        OpCreate,
+		OpName:    "CreateObject",
+		Package:   packageToCheck,
+		Transport: opts.Transport,
+	}); err != nil {
 		return err
 	}
 
@@ -585,8 +604,13 @@ func escapeXML(s string) string {
 // lockHandle is required (from LockObject)
 // transport is optional (for transportable objects)
 func (c *Client) DeleteObject(ctx context.Context, objectURL string, lockHandle string, transport string) error {
-	// Safety check
-	if err := c.checkSafety(OpDelete, "DeleteObject"); err != nil {
+	// Unified mutation policy gate (op type + package + transport)
+	if err := c.checkMutation(ctx, MutationContext{
+		Op:        OpDelete,
+		OpName:    "DeleteObject",
+		ObjectURL: objectURL,
+		Transport: transport,
+	}); err != nil {
 		return err
 	}
 
@@ -700,6 +724,16 @@ func GetClassIncludeSourceURL(className string, includeType ClassIncludeType) st
 func (c *Client) CreateTestInclude(ctx context.Context, className string, lockHandle string, transport string) error {
 	className = strings.ToUpper(className)
 
+	// Unified mutation policy gate (op type + parent class package + transport)
+	if err := c.checkMutation(ctx, MutationContext{
+		Op:        OpCreate,
+		OpName:    "CreateTestInclude",
+		ObjectURL: GetObjectURL(ObjectTypeClass, className, ""),
+		Transport: transport,
+	}); err != nil {
+		return err
+	}
+
 	body := `<?xml version="1.0" encoding="UTF-8"?>
 <class:abapClassInclude xmlns:class="http://www.sap.com/adt/oo/classes"
   xmlns:adtcore="http://www.sap.com/adt/core"
@@ -744,6 +778,16 @@ func (c *Client) GetClassInclude(ctx context.Context, className string, includeT
 // Requires a lock on the parent class.
 func (c *Client) UpdateClassInclude(ctx context.Context, className string, includeType ClassIncludeType, source string, lockHandle string, transport string) error {
 	sourceURL := GetClassIncludeSourceURL(className, includeType)
+
+	// Unified mutation policy gate (op type + package + transport)
+	if err := c.checkMutation(ctx, MutationContext{
+		Op:        OpUpdate,
+		OpName:    "UpdateClassInclude",
+		ObjectURL: sourceURL,
+		Transport: transport,
+	}); err != nil {
+		return err
+	}
 
 	params := url.Values{}
 	params.Set("lockHandle", lockHandle)
