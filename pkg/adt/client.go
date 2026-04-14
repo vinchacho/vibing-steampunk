@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/xml"
 	"fmt"
+	"html"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -115,9 +117,88 @@ func (c *Client) checkPackageSafety(pkg string) error {
 	return c.config.Safety.CheckPackage(pkg)
 }
 
+// checkObjectPackageSafety resolves the package for an existing object and
+// validates it against the configured package whitelist.
+func (c *Client) checkObjectPackageSafety(ctx context.Context, objectURL string) error {
+	if len(c.config.Safety.AllowedPackages) == 0 {
+		return nil
+	}
+
+	pkg, err := c.getObjectPackage(ctx, objectURL)
+	if err != nil {
+		return fmt.Errorf("resolving package for %s: %w", normalizeObjectURLForPackageCheck(objectURL), err)
+	}
+
+	return c.checkPackageSafety(pkg)
+}
+
 // checkTransportableEdit checks if editing objects that require transports is allowed.
 func (c *Client) checkTransportableEdit(transport, opName string) error {
 	return c.config.Safety.CheckTransportableEdit(transport, opName)
+}
+
+func (c *Client) getObjectPackage(ctx context.Context, objectURL string) (string, error) {
+	normalized := normalizeObjectURLForPackageCheck(objectURL)
+	objectName, err := objectNameFromURL(normalized)
+	if err != nil {
+		return "", err
+	}
+
+	results, err := c.SearchObject(ctx, objectName, 20)
+	if err != nil {
+		return "", err
+	}
+
+	canonicalURL := canonicalizeObjectURL(normalized)
+	for _, result := range results {
+		if result.PackageName == "" {
+			continue
+		}
+		if canonicalizeObjectURL(result.URI) == canonicalURL {
+			return result.PackageName, nil
+		}
+	}
+
+	return "", fmt.Errorf("package metadata not found")
+}
+
+func normalizeObjectURLForPackageCheck(objectURL string) string {
+	normalized := strings.TrimSuffix(objectURL, "/")
+
+	if idx := strings.Index(normalized, "/includes/"); idx >= 0 {
+		return normalized[:idx]
+	}
+	if strings.HasSuffix(normalized, "/source/main") {
+		return strings.TrimSuffix(normalized, "/source/main")
+	}
+
+	return normalized
+}
+
+func canonicalizeObjectURL(objectURL string) string {
+	normalized := normalizeObjectURLForPackageCheck(objectURL)
+	if decoded, err := url.PathUnescape(normalized); err == nil {
+		normalized = decoded
+	}
+	return strings.ToLower(strings.TrimSuffix(normalized, "/"))
+}
+
+func objectNameFromURL(objectURL string) (string, error) {
+	normalized := normalizeObjectURLForPackageCheck(objectURL)
+	parts := strings.Split(strings.Trim(normalized, "/"), "/")
+	if len(parts) == 0 {
+		return "", fmt.Errorf("invalid object URL")
+	}
+
+	name, err := url.PathUnescape(parts[len(parts)-1])
+	if err != nil {
+		return "", fmt.Errorf("decoding object name: %w", err)
+	}
+	if name == "" {
+		return "", fmt.Errorf("invalid object URL")
+	}
+
+	return strings.ToUpper(name), nil
 }
 
 // Safety returns the safety configuration for checking transport operations.
@@ -998,10 +1079,20 @@ func (c *Client) GetSystemInfo(ctx context.Context) (*SystemInfo, error) {
 	}
 
 	// Try to detect HANA from CVERS (optional)
-	hanaResult, err := c.RunQuery(ctx, "SELECT RELEASE FROM CVERS WHERE COMPONENT LIKE '%HDB%' OR COMPONENT LIKE '%HANA%'", 1)
+	hanaResult, err := c.RunQuery(ctx,
+		"SELECT RELEASE FROM CVERS WHERE COMPONENT LIKE '%HDB%' OR COMPONENT LIKE '%HANA%'", 1)
 	if err == nil && len(hanaResult.Rows) > 0 {
 		info.DatabaseSystem = "HDB"
 		info.DatabaseRelease = getString(hanaResult.Rows[0], "RELEASE")
+	} else {
+		// Step 2: S4CORE in CVERS — pure S/4HANA.
+		// S/4HANA implies HANA database. However its version cannot be inferred from the software component.
+		// Therefore DatabaseRelease is left blank
+		s4Result, err := c.RunQuery(ctx,
+			"SELECT COMPONENT FROM CVERS WHERE COMPONENT = 'S4CORE'", 1)
+		if err == nil && len(s4Result.Rows) > 0 {
+			info.DatabaseSystem = "HDB"
+		}
 	}
 
 	// If we couldn't get SystemID from T000, use fallback
@@ -2251,22 +2342,33 @@ func parseSQLTraceDirectory(data []byte) ([]SQLTraceEntry, error) {
 
 // GetAPIReleaseState retrieves the API release state for an ABAP object.
 // This checks whether the object is released for use in ABAP Cloud (S/4HANA Clean Core).
-// objectURI is the full ADT path, e.g. "/sap/bc/adt/oo/classes/cl_abap_typedescr".
-// Do NOT url-escape this — it is already a valid URI path.
 func (c *Client) GetAPIReleaseState(ctx context.Context, objectURI string) (*APIReleaseState, error) {
-	resp, err := c.transport.Request(ctx, objectURI, &RequestOptions{
+	// objectURI is the full ADT path of the OBJECT, e.g. "/sap/bc/adt/oo/classes/cl_abap_typedescr".
+	// We escape it to attach it to the endpoint path.
+	endpoint := fmt.Sprintf("/sap/bc/adt/apireleases/%s", url.PathEscape(objectURI))
+
+	resp, err := c.transport.Request(ctx, endpoint, &RequestOptions{
 		Method: http.MethodGet,
-		Accept: "application/vnd.sap.adt.api.releasestate.v1+xml",
+		Accept: "application/vnd.sap.adt.apirelease.v10+xml",
 	})
 	if err != nil {
 		return nil, fmt.Errorf("getting API release state: %w", err)
 	}
 
+	body := strings.TrimSpace(string(resp.Body))
+
+	if u, err := strconv.Unquote(body); err == nil {
+		body = u
+	}
+
+	if strings.Contains(body, "&lt;") {
+		body = html.UnescapeString(body)
+	}
+
 	var state APIReleaseState
-	if err := xml.Unmarshal(resp.Body, &state); err != nil {
-		return nil, fmt.Errorf("parsing API release state XML: %w", err)
+	if err := xml.Unmarshal([]byte(body), &state); err != nil {
+		return nil, fmt.Errorf("unmarshal API release state: %w", err)
 	}
 
 	return &state, nil
 }
-
