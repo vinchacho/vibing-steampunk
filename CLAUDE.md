@@ -18,19 +18,27 @@ Sequence: unify existing dep logic → SQL/ADT adapters → impact/path queries.
 Plan: MCP debug sessions → DAP → Web UI. ADT REST API mapped from `CL_TPDA_ADT_RES_APP`. Design: [001](reports/2026-04-05-001-gui-debugger-design.md)
 
 ### 3. Open Issues
-- **#88** Lock handle bug (EditSource/WriteSource) — real user report
 - **#55** RunReport in APC — architectural limit
 - **#46, #45** Sync script — low effort
+- ~~**#88** Lock handle bug~~ — closed upstream in `22517d4` (Stateful + ModificationSupport guard)
 
-### 4. Recent Additions (post-merge, v2.32 → v2.38.1)
+### 4. Recent Additions (post-merge, v2.32 → v2.39.0)
 Discoverable but not yet load-bearing in workflows:
+- **v2.39.0 Transport Changelog** — `vsp changelog <package>` (E070/E071/E07T) and `vsp changes <package>` (E070A attribute grouping for CR-level co-change)
+- **`cr-config-audit`** — config-relevant literal analysis (v2a.1) with per-object L2 SQLite cache, 1-hop transitive reach, DDIC delivery-class filter
+- **`RecoverFailedCreate`** — MCP recovery primitive + `vsp recover-failed-create` CLI; reconciles partial-create on 5xx
+- **`vsp boundaries`** — standalone directional package boundary crossing analysis (`tr-boundaries`, `cr-boundaries` with `--details`, `--report html`)
+- **Graph exports** — DOT, PlantUML, GraphML, Mermaid (with package subgraphs, edge coloring)
+- **Side-effect extraction + LUW classification (Phase 1)** — `CALL TRANSACTION`, `CALL TRANSFORMATION`, `LEAVE TO TRANSACTION`
+- **SAML SSO** — `pkg/adt/saml_auth.go` for S/4HANA Public Cloud (PR #97)
+- **Package allowlist enforcement on mutations** — `SAP_ALLOWED_PACKAGES` now blocks existing-object writes (PR #101)
 - **`AnalyzeABAPCode`** — abaplint static analysis MCP tool (PR #89)
 - **Slim V2** — method-level dead-code analysis (`vsp slim --level method`)
-- **Package health MVP** — `vsp health <package>` with E070 transport fallback
+- **Package health MVP** — `vsp health <package>` with `--details`, `--format md/html`, `--report` file output
 - **`internal/lsp/`** — ABAP LSP server (online diagnostics, go-to-definition)
 - **`cmd/abapgit-pack/`** — standalone abapGit ZIP packer
 - **Browser auth** — `pkg/adt/browser_auth.go` (chromedp-based interactive login)
-- **New MCP handler domains** — `cds`, `codeanalysis`, `gcts`, `graph`, `health`, `i18n`, `revisions`, `testing`
+- **New MCP handler domains** — `cds`, `codeanalysis`, `gcts`, `graph`, `health`, `i18n`, `revisions`, `testing`, `transport_analysis`
 
 ---
 
@@ -75,7 +83,7 @@ SAP_URL=http://host:50000 SAP_USER=user SAP_PASSWORD=pass ./vsp
 | `SAP_INSECURE` / `--insecure` | Skip TLS verification (default: false) |
 | `SAP_COOKIE_FILE` / `--cookie-file` | Path to Netscape-format cookie file |
 | `SAP_COOKIE_STRING` / `--cookie-string` | Cookie string (key1=val1; key2=val2) |
-| `SAP_MODE` / `--mode` | Tool mode: `focused` (81 tools, default) or `expert` (122 tools) |
+| `SAP_MODE` / `--mode` | Tool mode: `hyperfocused` (1 universal tool, default since `880aa68`) · `focused` (81 tools) · `expert` (122 tools) |
 | `SAP_DISABLED_GROUPS` / `--disabled-groups` | Disable tool groups: `5`/`U`=UI5, `T`=Tests, `H`=HANA, `D`=Debug, `C`=CTS, `G`=Git, `R`=Reports, `I`=Install, `X`=Experimental |
 | `SAP_VERBOSE` / `--verbose` | Enable verbose logging to stderr |
 | **Safety Configuration** | |
@@ -252,6 +260,60 @@ The SAP ADT REST API documentation can be found at:
 4. **Auth** — use basic OR cookies, not both
 5. **ZADT_VSP** — WebSocket debug/RFC/RunReport require it installed on SAP
 
+## Security
+
+Never commit `.env`, `cookies.txt`, `.mcp.json`, or local agent/MCP config files (all in `.gitignore`).
+
+### Sanitize policy for tracked docs, tests, and examples
+
+The public repo must not contain concrete identifiers that tie code or
+docs to a live SAP system, a real user, or a customer's ABAP namespace.
+Anything that does belongs under `.local/` (gitignored) and never in
+`contexts/`, `reports/`, `docs/`, or any tracked test fixture.
+
+**Never in tracked files:**
+- Real SAP usernames — use `TESTUSER`
+- Real hostnames or IPs — use `dev.example.local`, `prodsys-a.example`, `trialsys.example`
+- System aliases that name a live box — use `devsys`, `devsys-adt`, `prodsys-a`, `prodsys-b`
+- Live transport numbers (`DEVK[0-9]+`, `R[0-9]{2}K[0-9]+`, `D[0-9]{2}K[0-9]+`) — use `TR-EXAMPLE`
+- Live change request IDs — use `CR-EXAMPLE`
+- Customer ABAP namespaces from real projects — use synthetic `ZDEMO_*`, `ZCL_DEMO_*`, `ZIF_DEMO_*`, `$ZDEMO`
+- Customer transport attribute names — use `Z_CR_ATTR`
+- Real passwords, API keys, bearer tokens (obvious, but stated)
+- Real person names tied to private systems (OSS attribution for upstream libraries is fine — "user X on private host Y" is not)
+
+**Always OK in tracked files:**
+- `$ZHIRTEST*`, `ZCL_HIRT*`, `ZCUSTOM_DEVELOPMENT` — pre-agreed synthetic fixtures
+- Public GitHub handles that are already in the Go module path
+- Upstream OSS attribution for library authors
+
+**Operational scratch goes under `.local/`** — session notes, live CR
+dumps, bug repros with real identifiers, debugging transcripts. The
+`.local/` dir is gitignored. If you need to reference it from a
+tracked doc, redact first.
+
+**Before every commit that touches `reports/`, `contexts/`, `docs/`,
+or test fixtures:** scan the staged diff for the identifier families
+above. The detection signature (concrete literal list of past-leaked
+strings) lives at `.local/scripts/check-identifiers.sh` and is
+gitignored on purpose — the signature itself would otherwise be the
+leak it is trying to prevent. Structural patterns safe to commit:
+
+```bash
+git diff --cached | grep -nE \
+  '\b[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\b|' \
+  '\b[A-Z][0-9]{2}K[0-9]{6}\b|' \
+  '\bDEVK[0-9]{6,}\b'
+```
+
+That catches IPv4 literals and SAP transport IDs without hardcoding
+a specific customer's values. Pair it with the private signature
+file for the names-based families (usernames, hostnames, ABAP object
+prefixes). If either matches, move the content under `.local/` and
+replace the tracked version with a synthetic placeholder. Rule of
+thumb: "would a stranger reading this file be able to identify the
+customer, the system, or a live account?" If yes, redact.
+
 ## Conventions
 
 ### Object Naming
@@ -270,12 +332,6 @@ To trigger breakpoints programmatically (without SAP GUI):
 4. Use `DebuggerListen` → `DebuggerAttach` to catch and debug
 
 This allows AI-driven debugging without manual SAP GUI interaction.
-
-## Security Notes
-
-- Never commit `.env`, `cookies.txt`, or `.mcp.json` (all in `.gitignore`)
-- Session summaries (`*SESSION-SUMMARY*`) are also gitignored
-- Always verify no credentials in `git log --all -p` before pushing
 
 ## Reports and Documentation
 
@@ -346,24 +402,32 @@ When creating a new report:
 
 | Metric | Value |
 |--------|-------|
-| **Latest version** | v2.38.1 |
-| **Modes** | `focused` (~81 tools, default) · `expert` (122 tools) · `hyperfocused` (1 universal tool) |
-| **Tests** | ~1,000 unit test cases across 16 packages + 35 integration tests |
+| **Latest version** | v2.39.0 |
+| **Modes** | `hyperfocused` (1 universal tool, **default**) · `focused` (~81 tools) · `expert` (122 tools) |
+| **Tests** | ~1,000 unit test cases across 16 packages + 35 integration tests (all green post-sync) |
 | **Platforms** | 9 (cross-compiled via Makefile) |
-| **Reports** | 179 in `reports/` (`YYYY-MM-DD-NNN-title.md`) |
-| **Sync** | 0 commits behind upstream `oisee/vibing-steampunk` (auto-merged via `scripts/sync-upstream.sh`) |
+| **Reports** | 187 in `reports/` (`YYYY-MM-DD-NNN-title.md`) |
+| **Sync** | 0 commits behind upstream `oisee/vibing-steampunk` (last merge `723d230`, 2026-04-15) |
 
-### Recent / in-flight (post v2.32)
+### Recent / in-flight (post v2.39.0)
 
 | Area | Status |
 |------|--------|
-| `pkg/graph/` engine | 🚧 In progress — queries (slim, health, impact, rename, api-surface), SQL/transport builders, scope analysis |
+| Transport Changelog (v2.39.0) | ✅ `vsp changelog` / `vsp changes` — E070/E070A/E07T-driven package & CR-level change correlation |
+| `cr-config-audit` | ✅ v2a.1 — value-level literal match, L2 SQLite cache, 1-hop transitive reach, DDIC delivery-class filter |
+| RecoverFailedCreate | ✅ MCP primitive + CLI; reconciles partial-create on 5xx |
+| Boundary crossing analysis | ✅ `vsp boundaries`, `tr-boundaries`, `cr-boundaries` with `--details` and HTML reports |
+| Graph exports | ✅ DOT, PlantUML, GraphML, Mermaid (with package subgraphs) |
+| Side-effects + LUW (Phase 1) | ✅ Extracts `CALL TRANSACTION`, `CALL TRANSFORMATION`, `LEAVE TO TRANSACTION` |
+| SAML SSO | ✅ `pkg/adt/saml_auth.go` — S/4HANA Public Cloud (PR #97) |
+| Package allowlist on mutations | ✅ `SAP_ALLOWED_PACKAGES` enforced on existing-object writes (PR #101) |
+| `pkg/graph/` engine | 🚧 In progress — queries (slim, health, impact, rename, api-surface, transport_boundaries), SQL/transport builders, crossing/effects |
 | `AnalyzeABAPCode` tool | ✅ abaplint-based static analysis (PR #89) |
 | Slim V2 dead-code | ✅ Method-level with `--level` flag, TDEVC hierarchy resolution |
-| Package health MVP | ✅ E070 transport fallback for staleness signal, package-level CLI |
+| Package health MVP | ✅ `--details`, `--format md/html`, `--report` file output, tests grouped by parent object |
 | Browser auth | ✅ `pkg/adt/browser_auth.go` (chromedp-based) |
 | ABAP LSP server | ✅ `internal/lsp/` — online diagnostics, go-to-definition |
-| New MCP handlers | ✅ `cds`, `codeanalysis`, `gcts`, `graph`, `health`, `i18n`, `revisions`, `testing` |
+| MCP handler domains | ✅ `cds`, `codeanalysis`, `gcts`, `graph`, `health`, `i18n`, `revisions`, `testing`, `transport_analysis` |
 | AMDP Debugger | ⚠️ Experimental — session works, breakpoints need investigation (expert mode only) |
 | UI5/BSP Mgmt | ⚠️ Partial — Read ops work; Create needs alternate API |
 
