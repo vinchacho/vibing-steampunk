@@ -6,39 +6,35 @@
 
 ---
 
+## Project Status
+
+| Metric | Value |
+|--------|-------|
+| **Latest version** | v2.39.0 |
+| **Modes** | `hyperfocused` (1 universal tool, **default**) · `focused` (102 whitelisted tools) · `expert` (153 registered tools; runtime count varies with feature detection and `--disabled-groups`) |
+| **Tests** | 1,325 `func Test` functions across 16 packages (incl. 35 integration tests behind the `integration` build tag) — `go test ./...` green as of 2026-07-11 |
+| **Platforms** | 9 (cross-compiled via Makefile) |
+| **Reports** | 190 in `reports/` (179 dated `YYYY-MM-DD-NNN-title.md` + 11 reference) |
+| **Sync** | 0 commits behind upstream `oisee/vibing-steampunk` (last merge `b884ea7`, 2026-07-11) |
+
+> Counts are code-derived (see "Reconciling counts" below). If a number here disagrees with the code, the code wins — re-measure, don't copy forward.
+
 ## Current Priorities
 
-### 1. Graph Engine (`pkg/graph/`) — In Progress
-Sequence: unify existing dep logic → SQL/ADT adapters → impact/path queries.
-- Done: core types, parser dep extraction, boundary analyzer (11 tests)
-- Pending: SQL adapters (CROSS/WBCROSSGT/D010INC), ADT adapters, unify `cli_deps.go` + `cli_extra.go` + `ctxcomp/analyzer.go`
+Roadmap and rationale: [reports/2026-07-11-001-improvement-plan-and-landscape.md](reports/2026-07-11-001-improvement-plan-and-landscape.md). Upstream's own triage: [reports/2026-06-15-001-issue-pr-triage-and-roadmap.md](reports/2026-06-15-001-issue-pr-triage-and-roadmap.md).
+
+### 1. Quality foundation
+- Routing tests for `internal/mcp/handlers_universal.go` (default mode is effectively untested — only `server_test.go` exists in `internal/mcp`)
+- Safe-by-default decision: `internal/mcp/server.go` defaults to `adt.UnrestrictedSafetyConfig()`; unused safe default at `pkg/adt/safety.go` (stderr warning ships now; flipping is a breaking change)
+- Cherry-pick candidates from upstream open PRs (#125 lock/session, #120 CSRF, #126 search filter) — see improvement report §5
+
+### 2. Graph Engine (`pkg/graph/`) — In Progress
+- Done: core types, parser dep extraction, boundary analyzer, SQL/transport/config builders (`builder_sql.go`, `builder_transport.go`, `builder_config.go` — all tested), queries (slim/health/rename/impact/api-surface/transport_boundaries)
+- Pending: `builder_adt.go` (ADT adapters), unify `cmd/vsp/cli_deps.go` classifier + `pkg/ctxcomp/analyzer.go` into `pkg/graph`
 - Design: [002](reports/2026-04-05-002-graph-engine-design.md), [003](reports/2026-04-05-003-graph-engine-alignment-for-claude.md)
 
-### 2. GUI Debugger (Issue #2) — Strategic
+### 3. GUI Debugger (Issue #2) — Strategic
 Plan: MCP debug sessions → DAP → Web UI. ADT REST API mapped from `CL_TPDA_ADT_RES_APP`. Design: [001](reports/2026-04-05-001-gui-debugger-design.md)
-
-### 3. Open Issues
-- **#55** RunReport in APC — architectural limit
-- **#46, #45** Sync script — low effort
-- ~~**#88** Lock handle bug~~ — closed upstream in `22517d4` (Stateful + ModificationSupport guard)
-
-### 4. Recent Additions (post-merge, v2.32 → v2.39.0)
-Discoverable but not yet load-bearing in workflows:
-- **v2.39.0 Transport Changelog** — `vsp changelog <package>` (E070/E071/E07T) and `vsp changes <package>` (E070A attribute grouping for CR-level co-change)
-- **`cr-config-audit`** — config-relevant literal analysis (v2a.1) with per-object L2 SQLite cache, 1-hop transitive reach, DDIC delivery-class filter
-- **`RecoverFailedCreate`** — MCP recovery primitive + `vsp recover-failed-create` CLI; reconciles partial-create on 5xx
-- **`vsp boundaries`** — standalone directional package boundary crossing analysis (`tr-boundaries`, `cr-boundaries` with `--details`, `--report html`)
-- **Graph exports** — DOT, PlantUML, GraphML, Mermaid (with package subgraphs, edge coloring)
-- **Side-effect extraction + LUW classification (Phase 1)** — `CALL TRANSACTION`, `CALL TRANSFORMATION`, `LEAVE TO TRANSACTION`
-- **SAML SSO** — `pkg/adt/saml_auth.go` for S/4HANA Public Cloud (PR #97)
-- **Package allowlist enforcement on mutations** — `SAP_ALLOWED_PACKAGES` now blocks existing-object writes (PR #101)
-- **`AnalyzeABAPCode`** — abaplint static analysis MCP tool (PR #89)
-- **Slim V2** — method-level dead-code analysis (`vsp slim --level method`)
-- **Package health MVP** — `vsp health <package>` with `--details`, `--format md/html`, `--report` file output
-- **`internal/lsp/`** — ABAP LSP server (online diagnostics, go-to-definition)
-- **`cmd/abapgit-pack/`** — standalone abapGit ZIP packer
-- **Browser auth** — `pkg/adt/browser_auth.go` (chromedp-based interactive login)
-- **New MCP handler domains** — `cds`, `codeanalysis`, `gcts`, `graph`, `health`, `i18n`, `revisions`, `testing`, `transport_analysis`
 
 ---
 
@@ -61,10 +57,26 @@ make build-all          # 3 common platforms (linux-amd64, darwin-arm64, windows
 make build-all-all      # All 9 platforms
 ```
 
+CI: `.github/workflows/ci.yml` runs build + vet + test on every push/PR. `release.yml` is manual dispatch; `sync-upstream.yml` is the daily upstream check.
+
 Key flags: `--mode focused|expert|hyperfocused`, `--read-only`, `--allowed-packages "Z*"`, `--disabled-groups 5THD`
+
+### Reconciling counts
+
+When updating the Project Status table, derive — never copy:
+
+```bash
+grep -c 'shouldRegister("' internal/mcp/tools_register.go        # expert-mode registrations
+grep -cE '^\s*"[A-Za-z0-9_]+":\s*true' internal/mcp/tools_focused.go  # focused whitelist
+grep -rE '^func Test' --include='*_test.go' . | wc -l             # test functions
+ls reports/ | wc -l                                               # reports
+```
 
 ---
 
+## Configuration
+
+```bash
 # Using environment variables
 SAP_URL=http://host:50000 SAP_USER=user SAP_PASSWORD=pass ./vsp
 
@@ -83,7 +95,7 @@ SAP_URL=http://host:50000 SAP_USER=user SAP_PASSWORD=pass ./vsp
 | `SAP_INSECURE` / `--insecure` | Skip TLS verification (default: false) |
 | `SAP_COOKIE_FILE` / `--cookie-file` | Path to Netscape-format cookie file |
 | `SAP_COOKIE_STRING` / `--cookie-string` | Cookie string (key1=val1; key2=val2) |
-| `SAP_MODE` / `--mode` | Tool mode: `hyperfocused` (1 universal tool, default since `880aa68`) · `focused` (81 tools) · `expert` (122 tools) |
+| `SAP_MODE` / `--mode` | Tool mode: `hyperfocused` (default since `880aa68`) · `focused` · `expert` — tool counts in Project Status |
 | `SAP_DISABLED_GROUPS` / `--disabled-groups` | Disable tool groups: `5`/`U`=UI5, `T`=Tests, `H`=HANA, `D`=Debug, `C`=CTS, `G`=Git, `R`=Reports, `I`=Install, `X`=Experimental |
 | `SAP_VERBOSE` / `--verbose` | Enable verbose logging to stderr |
 | **Safety Configuration** | |
@@ -100,20 +112,22 @@ SAP_URL=http://host:50000 SAP_USER=user SAP_PASSWORD=pass ./vsp
 | `SAP_FEATURE_UI5` / `--feature-ui5` | UI5/Fiori BSP management: auto, on, off (default: auto) |
 | `SAP_FEATURE_TRANSPORT` / `--feature-transport` | CTS transport management: auto, on, off (default: auto) |
 
+⚠️ With no safety flags the server runs fully unrestricted (and warns on stderr). For anything beyond a sandbox, start from `--read-only` or `--allowed-packages`.
+
 ## Codebase Structure
 
 ```
 cmd/
-├── vsp/                  # Main CLI + MCP server (18 files: cli, devops, compile, deps, lsp, lua, workflow, ...)
+├── vsp/                  # Main CLI + MCP server (cli, devops, compile, deps, lsp, lua, workflow, ...)
 └── abapgit-pack/         # Standalone abapGit ZIP packer
 
 internal/
-├── mcp/                  # MCP server core + 37 handlers_*.go (one per domain: crud, git, graph, health, ...)
+├── mcp/                  # MCP server core + 38 handlers_*.go (one per domain: crud, git, graph, health, ...)
 └── lsp/                  # ABAP LSP server (online diagnostics, go-to-definition)
 
 pkg/
-├── adt/                  # ADT REST client (HTTP, CSRF, sessions, all SAP ops; 28+ files)
-├── abaplint/             # Native Go port of abaplint: lexer, statement parser, 8 lint rules (oracle-verified)
+├── adt/                  # ADT REST client (HTTP, CSRF, sessions, all SAP ops)
+├── abaplint/             # Native Go port of abaplint: lexer, statement parser, lint rules (oracle-verified)
 ├── graph/                # Dependency graph engine: queries (slim/health/rename/impact/api-surface), builders, scopes
 ├── ctxcomp/              # Context compression: dep resolution + contract injection for GetSource
 ├── dsl/                  # Fluent API + YAML workflow engine, batch import/export, pipelines
@@ -160,34 +174,9 @@ ARCHITECTURE.md  ROADMAP.md  VISION.md  README_TOOLS.md
 ## Adding a New MCP Tool
 
 1. **Add ADT client method** in `pkg/adt/` (e.g. `client.go`, `crud.go`, `devtools.go`).
-2. **Register tool** in `internal/mcp/tools_register.go` with `shouldRegister("ToolName")` and the tool definition.
+2. **Register tool** in `internal/mcp/tools_register.go` with `shouldRegister("ToolName")` and the tool definition. (All registration goes through `registerTools()` in this file — there is no separate legacy path anymore.)
 3. **Whitelist for focused mode** (optional): add to `internal/mcp/tools_focused.go`. For tool grouping (`--disabled-groups`), update `tools_groups.go`.
-4. **Add handler** in the appropriate `internal/mcp/handlers_<domain>.go` (37 domain files exist; pick the closest fit or create a new one). Handlers are routed from `handleToolCall()` in `server.go`.
-5. **Add integration test** in `pkg/adt/integration_test.go` (build tag `integration`).
-6. **Update `README_TOOLS.md`** tool reference table.
-
-> Legacy path: `internal/mcp/server.go` → `registerTools()` still exists for some early tools, but new work goes through `tools_register.go`.
-
-## Code Patterns
-
-### ADT Client Methods
-
-1. Handler in `handlers_*.go`:
-```go
-func (s *Server) handleX(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-    name, _ := req.GetArguments()["name"].(string)
-    result, err := s.adtClient.Method(ctx, name)
-    if err != nil { return newToolResultError(err.Error()), nil }
-    return mcp.NewToolResultText(format(result)), nil
-}
-```
-2. Register in `tools_register.go` with `shouldRegister("X")`
-3. Route in `handlers_analysis.go` (or appropriate router)
-4. Add to `tools_focused.go` if needed in focused mode
-
-### Tool Handler Pattern
-
-Handlers are organized in domain-specific files (`internal/mcp/handlers_*.go`). Each file contains handler functions for related tools:
+4. **Add handler** in the appropriate `internal/mcp/handlers_<domain>.go` (38 domain files exist; pick the closest fit or create a new one). Handlers are routed from `handleToolCall()` in `server.go`:
 
 ```go
 // In handlers_read.go (or appropriate domain file)
@@ -201,54 +190,23 @@ func (s *Server) handleNewTool(ctx context.Context, args map[string]any) (*mcp.C
 }
 ```
 
+5. **Add integration test** in `pkg/adt/integration_test.go` (build tag `integration`).
+6. **Update `README_TOOLS.md`** tool reference table.
+
 ### AMDP WebSocket Client Pattern (via ZADT_VSP)
 
-For AMDP/HANA debugging, we use WebSocket connection to the ZADT_VSP APC handler:
-
-```go
-// WebSocket client connects to ZADT_VSP for stateful debugging
-type AMDPWebSocketClient struct {
-    conn      *websocket.Conn
-    sessionID string
-    isActive  bool
-    Events    chan *AMDPEvent
-    // ...
-}
-
-// Handler uses WebSocket client directly
-func (s *Server) handleAMDPDebuggerStep(...) {
-    if err := s.amdpWSClient.Step(ctx, stepType); err != nil {
-        return newToolResultError(fmt.Sprintf("AMDPDebuggerStep failed: %v", err)), nil
-    }
-    // ...
-}
-```
-
-See `pkg/adt/amdp_websocket.go` for Go client implementation.
-See `embedded/abap/zcl_vsp_amdp_service.clas.abap` for ABAP service implementation.
+AMDP/HANA debugging uses a WebSocket connection to the ZADT_VSP APC handler instead of plain REST — the debug session is stateful and event-driven (`pkg/adt/amdp_websocket.go` for the Go client, `embedded/abap/zcl_vsp_amdp_service.clas.abap` for the ABAP side). Handlers call the WS client directly (`s.amdpWSClient.Step(...)`) rather than going through the ADT REST client.
 
 ## Testing
 
-### Unit Tests (499 tests across 6 packages)
-- `internal/mcp` - Server, tool registration, handler tests
-- `pkg/adt` - ADT client, HTTP, safety, transport, codeintel, debugger, help, history, recorder, XML tests
-- `pkg/cache` - In-memory and SQLite cache tests
-- `pkg/config` - System profile management tests
-- `pkg/dsl` - DSL, workflow, search tests
-- `pkg/scripting` - Lua VM, bindings, helpers tests
-- Run: `go test ./...`
-
-### Integration Tests (35 tests)
-- Build tag: `integration`
-- Create objects in `$TMP` package, clean up after
-- Run: `go test -tags=integration -v ./pkg/adt/`
-- Test program for manual testing: `ZTEST_MCP_CRUD` in `$TMP`
+- **Unit tests:** `go test ./...` — 16 packages, notably `internal/mcp` (server/registration), `pkg/adt` (client, HTTP, safety, transport, codeintel, debugger), `pkg/cache`, `pkg/config`, `pkg/dsl`, `pkg/graph`, `pkg/scripting`.
+- **Integration tests:** `go test -tags=integration -v ./pkg/adt/` — create objects in `$TMP`, clean up after. Manual test program: `ZTEST_MCP_CRUD` in `$TMP`.
+- **Known gap:** `internal/mcp` handler routing (esp. `handlers_universal.go`) has no dedicated tests — see Current Priorities.
 
 ## ADT API Reference
 
-The SAP ADT REST API documentation can be found at:
-- `/sap/bc/adt/discovery` - API discovery document
-- See `reports/adt-abap-internals-documentation.md` for detailed endpoint analysis
+- `/sap/bc/adt/discovery` — API discovery document
+- `reports/adt-abap-internals-documentation.md` — detailed endpoint analysis
 
 ---
 
@@ -262,7 +220,7 @@ The SAP ADT REST API documentation can be found at:
 
 ## Security
 
-Never commit `.env`, `cookies.txt`, `.mcp.json`, or local agent/MCP config files (all in `.gitignore`).
+Never commit `.env`, `cookies.txt`, `.mcp.json`, or local agent/MCP config files (all in `.gitignore`). Tracked examples (`.env.example`, `.mcp.json.example`) must contain placeholder values only.
 
 ### Sanitize policy for tracked docs, tests, and examples
 
@@ -337,101 +295,47 @@ This allows AI-driven debugging without manual SAP GUI interaction.
 
 ### Report Naming Convention
 
-All research reports, analysis documents, and design specifications follow this naming pattern:
-
-**Format:** `./reports/{YYYY-MM-DD-<number>-<title>}.md`
-
-**Examples:**
-- `2025-12-02-001-auto-pilot-cross-wbcrossgt-analysis.md`
-- `2025-12-02-005-improved-graph-architecture-design.md`
-
-**Numbering:**
-- Sequential numbers starting from 001 each day
-- Preserves chronological order
-- Easy to reference in documentation
-
-### Current Reports (134 total: 123 dated + 11 reference)
-
-**Date range:** 2025-12-02 through 2026-02-07
-
-**Categories:**
-- Analysis & research (graph architecture, CROSS/WBCROSSGT, ADT capabilities)
-- Design documents (cache, safety, DSL, graph traversal, test intelligence)
-- Implementation reports (cache, safety, debugger, AMDP, abapGit, transport)
-- Strategic reports (future vision, SAP positioning, CBA alignment, Codex evaluation)
-- Feature designs (tool visibility, report execution, async, transportable edits)
-- Status reports (project status snapshots at various milestones)
-
-Browse `reports/` directory for full listing. Files follow `YYYY-MM-DD-NNN-title.md` naming.
-
-#### Reference Documentation (Non-numbered)
-- `abap-adt-discovery-guide.md` - ADT API discovery process
-- `abap-adt-tools-overview.md` - ADT tools overview
-- `adt-abap-internals-documentation.md` - Detailed ADT endpoint analysis
-- `adt-capability-matrix.md` - ADT feature comparison
-- `adt-toolset-analysis.md` - ADT toolset analysis
-- `adt-tracing-and-z-implementations.md` - ADT tracing and Z implementations
-- `cookie-auth-implementation-guide.md` - Cookie authentication research
-- `focused-mode-proposal.md` - Focused mode design proposal
-- `golang-port-assessment.md` - Go port assessment
-- `mcp-adt-go-status.md` - MCP ADT Go status
-- `project-rename-analysis.md` - Project rename analysis
+**Format:** `./reports/{YYYY-MM-DD-<number>-<title>}.md` — sequential numbers starting from 001 each day, lowercase hyphen-separated titles. Date range so far: 2025-12-02 through 2026-07-11. Browse `reports/` for the full listing; the 11 reference documents (ADT discovery/internals/capability guides, cookie-auth guide, focused-mode proposal, Go-port assessment, rename analysis) are non-numbered.
 
 ### Creating New Reports
 
-When creating a new report:
-
-1. **Determine the date:** Use ISO format `YYYY-MM-DD`
+1. **Determine the date:** ISO format `YYYY-MM-DD` (creation date)
 2. **Assign next number:** Continue sequence from last report that day
-3. **Choose descriptive title:** Lowercase, hyphen-separated
-4. **Use the format:** `reports/{YYYY-MM-DD-<number>-<title>}.md`
-5. **Include metadata:** Date, Report ID, Subject at top of document
+3. **Use the format:** `reports/{YYYY-MM-DD-<number>-<title>}.md`
+4. **Include metadata** at the top:
 
-**Template:**
 ```markdown
 # Report Title
 
-**Date:** 2025-12-02
-**Report ID:** 009
+**Date:** 2026-07-11
+**Report ID:** 001
 **Subject:** Brief description
 **Related Documents:** Links to related reports
+```
 
----
-
-## Project Status
-
-| Metric | Value |
-|--------|-------|
-| **Latest version** | v2.39.0 |
-| **Modes** | `hyperfocused` (1 universal tool, **default**) · `focused` (~81 tools) · `expert` (122 tools) |
-| **Tests** | ~1,000 unit test cases across 16 packages + 35 integration tests (all green post-sync) |
-| **Platforms** | 9 (cross-compiled via Makefile) |
-| **Reports** | 187 in `reports/` (`YYYY-MM-DD-NNN-title.md`) |
-| **Sync** | 0 commits behind upstream `oisee/vibing-steampunk` (last merge `723d230`, 2026-04-15) |
-
-### Recent / in-flight (post v2.39.0)
+## Feature Status
 
 | Area | Status |
 |------|--------|
 | Transport Changelog (v2.39.0) | ✅ `vsp changelog` / `vsp changes` — E070/E070A/E07T-driven package & CR-level change correlation |
 | `cr-config-audit` | ✅ v2a.1 — value-level literal match, L2 SQLite cache, 1-hop transitive reach, DDIC delivery-class filter |
-| RecoverFailedCreate | ✅ MCP primitive + CLI; reconciles partial-create on 5xx |
+| RecoverFailedCreate | ✅ MCP primitive + `vsp recover-failed-create` CLI; reconciles partial-create on 5xx |
 | Boundary crossing analysis | ✅ `vsp boundaries`, `tr-boundaries`, `cr-boundaries` with `--details` and HTML reports |
-| Graph exports | ✅ DOT, PlantUML, GraphML, Mermaid (with package subgraphs) |
+| Graph exports | ✅ DOT, PlantUML, GraphML, Mermaid (with package subgraphs, edge coloring) |
 | Side-effects + LUW (Phase 1) | ✅ Extracts `CALL TRANSACTION`, `CALL TRANSFORMATION`, `LEAVE TO TRANSACTION` |
 | SAML SSO | ✅ `pkg/adt/saml_auth.go` — S/4HANA Public Cloud (PR #97) |
 | Package allowlist on mutations | ✅ `SAP_ALLOWED_PACKAGES` enforced on existing-object writes (PR #101) |
-| `pkg/graph/` engine | 🚧 In progress — queries (slim, health, impact, rename, api-surface, transport_boundaries), SQL/transport builders, crossing/effects |
 | `AnalyzeABAPCode` tool | ✅ abaplint-based static analysis (PR #89) |
 | Slim V2 dead-code | ✅ Method-level with `--level` flag, TDEVC hierarchy resolution |
-| Package health MVP | ✅ `--details`, `--format md/html`, `--report` file output, tests grouped by parent object |
-| Browser auth | ✅ `pkg/adt/browser_auth.go` (chromedp-based) |
+| Package health MVP | ✅ `vsp health <package>` — `--details`, `--format md/html`, `--report` file output |
+| Browser auth | ✅ `pkg/adt/browser_auth.go` (chromedp-based interactive login) |
 | ABAP LSP server | ✅ `internal/lsp/` — online diagnostics, go-to-definition |
 | MCP handler domains | ✅ `cds`, `codeanalysis`, `gcts`, `graph`, `health`, `i18n`, `revisions`, `testing`, `transport_analysis` |
+| `pkg/graph/` engine | 🚧 See Current Priorities |
 | AMDP Debugger | ⚠️ Experimental — session works, breakpoints need investigation (expert mode only) |
 | UI5/BSP Mgmt | ⚠️ Partial — Read ops work; Create needs alternate API |
 
-### DSL & Workflow Usage
+## DSL & Workflow Usage
 
 ```bash
 # Run unit tests for a package
@@ -444,47 +348,24 @@ vsp workflow run examples/workflows/ci-pipeline.yaml --var PACKAGE=\$TMP
 
 ```go
 // Go fluent API - Search & Test
-objects, _ := dsl.Search(client).
-    Query("ZCL_*").
-    Classes().
-    InPackage("$TMP").
-    Execute(ctx)
+objects, _ := dsl.Search(client).Query("ZCL_*").Classes().InPackage("$TMP").Execute(ctx)
+summary, _ := dsl.Test(client).Objects(objects...).IncludeDangerous().Parallel(4).Run(ctx)
 
-summary, _ := dsl.Test(client).
-    Objects(objects...).
-    IncludeDangerous().
-    Parallel(4).
-    Run(ctx)
-
-// Batch Import (abapGit-compatible)
-result, _ := dsl.Import(client).
-    FromDirectory("./src/").
-    ToPackage("$ZRAY").
-    RAPOrder().  // DDLS → BDEF → Classes → SRVD
-    Execute(ctx)
+// Batch Import (abapGit-compatible; RAPOrder = DDLS → BDEF → Classes → SRVD)
+result, _ := dsl.Import(client).FromDirectory("./src/").ToPackage("$ZRAY").RAPOrder().Execute(ctx)
 
 // Batch Export (with all class includes)
-result, _ := dsl.Export(client).
-    Classes("ZCL_TRAVEL").
-    ToDirectory("./backup/").
-    Execute(ctx)
+result, _ := dsl.Export(client).Classes("ZCL_TRAVEL").ToDirectory("./backup/").Execute(ctx)
 
 // RAP Deployment Pipeline
 pipeline := dsl.RAPPipeline(client, "./src/", "$ZRAY", "ZTRAVEL_SB")
 ```
 
-### Roadmap
-- Graph Traversal & Analysis (Design: Reports 005-007)
-- Standard API Surface Scraper (Design: Report 006)
-- Test Intelligence - smart test execution based on code changes (Design: Report 008)
-- One Tool Mode - ultra-minimal tool consolidation (Design: 2026-02-01-001)
-- abapGit dependency management & submodules (Design: 2026-02-03-001)
-
 ---
 
 ## Upstream Sync Automation
 
-This fork automatically syncs with upstream `oisee/vibing-steampunk`. See [scripts/README.md](scripts/README.md) for details.
+This fork automatically syncs with upstream `oisee/vibing-steampunk`. See [scripts/README.md](scripts/README.md) for details. **Upstream is pull-only — never push to or open PRs against `oisee/vibing-steampunk`.**
 
 ### Quick Sync
 
@@ -519,4 +400,3 @@ When resolving fork-vs-upstream conflicts:
 - **README.md URLs**: keep `vinchacho` URLs, incorporate new upstream content (links, badges)
 - **`docs/` markdown**: fix `oisee` → `vinchacho` in all repo URLs
 - **`articles/`**: do NOT change `oisee` references — these are published upstream author content referencing their own repos (`oisee/zork-abap`, `oisee/vivid-vibes`)
-
