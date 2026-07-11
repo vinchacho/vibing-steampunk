@@ -628,10 +628,10 @@ Selectively disable tool categories:
 
 ```bash
 # macOS (Apple Silicon)
-curl -L https://github.com/vinchacho/vibing-steampunk/releases/latest/download/vsp-darwin-arm64 -o vsp
+curl -L https://github.com/oisee/vibing-steampunk/releases/latest/download/vsp-darwin-arm64 -o vsp
 
 # Linux (x64)
-curl -L https://github.com/vinchacho/vibing-steampunk/releases/latest/download/vsp-linux-amd64 -o vsp
+curl -L https://github.com/oisee/vibing-steampunk/releases/latest/download/vsp-linux-amd64 -o vsp
 
 chmod +x vsp
 ```
@@ -958,7 +958,7 @@ EOF
 | Resource | Link |
 |----------|------|
 | **GitHub Repository** | https://github.com/vinchacho/vibing-steampunk |
-| **Releases** | https://github.com/vinchacho/vibing-steampunk/releases |
+| **Releases** | https://github.com/oisee/vibing-steampunk/releases |
 | **Documentation** | `/docs` folder |
 | **Reports** | `/reports` folder |
 | **CLAUDE.md** | Project-specific AI instructions |

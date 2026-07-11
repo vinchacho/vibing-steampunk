@@ -12,7 +12,7 @@ go build -o vsp ./cmd/vsp
 ./vsp --version
 ```
 
-Single binary, zero dependencies beyond Go 1.23+.
+Single binary, zero dependencies beyond Go 1.25+.
 
 ---
 

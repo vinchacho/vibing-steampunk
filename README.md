@@ -317,9 +317,13 @@ See **[CLI Guide](docs/cli-guide.md)** for the complete reference with feature r
 ## Quick Start
 
 ```bash
-# Download from releases
-curl -LO https://github.com/vinchacho/vibing-steampunk/releases/latest/download/vsp-linux-amd64
-chmod +x vsp-linux-amd64
+# Download a prebuilt binary (published on upstream releases; pick your platform:
+# vsp-linux-amd64, vsp-darwin-arm64, vsp-windows-amd64.exe, ...)
+curl -L https://github.com/oisee/vibing-steampunk/releases/latest/download/vsp-linux-amd64 -o vsp
+chmod +x vsp
+
+# Or install with Go 1.25+ (@main: the fork's v2.x tags predate Go modules' /v2 rule, so @latest won't resolve)
+go install github.com/vinchacho/vibing-steampunk/cmd/vsp@main
 
 # Or build from source
 git clone https://github.com/vinchacho/vibing-steampunk.git && cd vibing-steampunk

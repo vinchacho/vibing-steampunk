@@ -22,7 +22,7 @@ npm install -g @openai/codex
 
 ```bash
 # Download prebuilt binary (pick your platform)
-curl -LO https://github.com/vinchacho/vibing-steampunk/releases/latest/download/vsp-linux-amd64
+curl -LO https://github.com/oisee/vibing-steampunk/releases/latest/download/vsp-linux-amd64
 chmod +x vsp-linux-amd64
 
 # Or build from source

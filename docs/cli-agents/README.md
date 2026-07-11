@@ -521,7 +521,7 @@ Example config (Claude Code / Codex / Gemini):
 
 ```bash
 # Download binary
-curl -LO https://github.com/vinchacho/vibing-steampunk/releases/latest/download/vsp-darwin-arm64
+curl -LO https://github.com/oisee/vibing-steampunk/releases/latest/download/vsp-darwin-arm64
 chmod +x vsp-darwin-arm64
 
 # Or build from source

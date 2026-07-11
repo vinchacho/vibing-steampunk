@@ -285,7 +285,7 @@ steps:
 ### 1. Install
 ```bash
 # Download single binary (no dependencies)
-curl -L https://github.com/vinchacho/vibing-steampunk/releases/latest/download/vsp-darwin-arm64 -o vsp
+curl -L https://github.com/oisee/vibing-steampunk/releases/latest/download/vsp-darwin-arm64 -o vsp
 chmod +x vsp
 ```
 
