@@ -329,6 +329,15 @@ go install github.com/vinchacho/vibing-steampunk/cmd/vsp@main
 git clone https://github.com/vinchacho/vibing-steampunk.git && cd vibing-steampunk
 make build
 ```
+
+```bash
+# Register with Claude Code
+claude mcp add vsp -- vsp --url http://your-sap-host:50000 --user YOUR_USERNAME --read-only
+# (or: vsp config init → copy .mcp.json.example to .mcp.json — see the committed examples)
+
+# Shell completion (zsh shown; bash/fish/powershell also supported)
+source <(vsp completion zsh)
+```
 ### Windows 11 with VS Code + Claude Code extension:
 #### 1. Get the latest vsp release:
 https://github.com/oisee/vibing-steampunk/releases.

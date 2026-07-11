@@ -885,9 +885,10 @@ SAP_INSECURE=false
 # VSP_TRANSPORT_ATTRIBUTE=SAPTEST
 
 # Tool Mode (optional)
-# focused = 81 essential tools (default)
-# expert = all 122 tools
-SAP_MODE=focused
+# hyperfocused = 1 universal SAP tool (default)
+# focused = curated tool whitelist
+# expert = all registered tools
+# SAP_MODE=focused
 
 # Safety Options (optional)
 # SAP_READ_ONLY=false
