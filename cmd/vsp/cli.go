@@ -386,9 +386,9 @@ var systemsCmd = &cobra.Command{
 	Long: `List all configured SAP systems from the systems config file.
 
 Config file locations (searched in order):
-  .vsp-systems.json
+  .vsp.json
   .vsp/systems.json
-  ~/.vsp-systems.json
+  ~/.vsp.json
   ~/.vsp/systems.json`,
 	RunE: runSystems,
 }
@@ -405,7 +405,7 @@ func runSystems(cmd *cobra.Command, args []string) error {
 
 	if cfg == nil {
 		fmt.Println("No systems config found.")
-		fmt.Println("\nCreate .vsp-systems.json with:")
+		fmt.Println("\nCreate .vsp.json with:")
 		fmt.Println(config.ExampleConfig())
 		return nil
 	}
@@ -449,7 +449,7 @@ var systemsInitCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Create example systems config",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		configPath := ".vsp-systems.json"
+		configPath := config.ConfigPaths()[0]
 		if _, err := os.Stat(configPath); err == nil {
 			return fmt.Errorf("%s already exists", configPath)
 		}

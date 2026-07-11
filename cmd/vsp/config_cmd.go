@@ -95,7 +95,7 @@ var configShowCmd = &cobra.Command{
 
 Shows:
   - Environment variables (SAP_*)
-  - Systems from .vsp-systems.json
+  - Systems from .vsp.json
   - .mcp.json if present`,
 	RunE: runConfigShow,
 }
