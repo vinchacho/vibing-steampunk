@@ -4,6 +4,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -158,6 +159,9 @@ func NewServer(cfg *Config) *Server {
 	}
 	if cfg.AllowTransportableEdits {
 		safety.AllowTransportableEdits = true
+	}
+	if safety.IsUnrestricted() {
+		fmt.Fprintln(os.Stderr, "WARNING: no safety restrictions configured — all write operations and free SQL are enabled on all packages. Consider --read-only, --allowed-packages, or --allowed-ops (SAP_READ_ONLY / SAP_ALLOWED_PACKAGES / SAP_ALLOWED_OPS).")
 	}
 	opts = append(opts, adt.WithSafety(safety))
 

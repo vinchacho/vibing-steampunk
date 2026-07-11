@@ -410,3 +410,28 @@ func TestSafetyConfig_CheckTransportableEdit_ErrorMessage(t *testing.T) {
 		t.Error("Error message should mention environment variable")
 	}
 }
+
+func TestIsUnrestricted(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  SafetyConfig
+		want bool
+	}{
+		{"unrestricted default", UnrestrictedSafetyConfig(), true},
+		{"safe default", DefaultSafetyConfig(), false},
+		{"development", DevelopmentSafetyConfig(), false},
+		{"read-only", SafetyConfig{ReadOnly: true}, false},
+		{"block free sql", SafetyConfig{BlockFreeSQL: true}, false},
+		{"allowed ops", SafetyConfig{AllowedOps: "RSQ"}, false},
+		{"disallowed ops", SafetyConfig{DisallowedOps: "CDUA"}, false},
+		{"package allowlist", SafetyConfig{AllowedPackages: []string{"Z*"}}, false},
+		{"transport opt-in alone still unrestricted", SafetyConfig{EnableTransports: true, AllowTransportableEdits: true}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.cfg.IsUnrestricted(); got != tt.want {
+				t.Errorf("IsUnrestricted() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

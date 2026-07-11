@@ -91,6 +91,17 @@ func UnrestrictedSafetyConfig() SafetyConfig {
 	}
 }
 
+// IsUnrestricted reports whether the config imposes no restrictions at all:
+// writes and free SQL enabled, no op filters, no package allowlist.
+// Transport gating (EnableTransports etc.) is a separate opt-in and does not count.
+func (s *SafetyConfig) IsUnrestricted() bool {
+	return !s.ReadOnly &&
+		!s.BlockFreeSQL &&
+		s.AllowedOps == "" &&
+		s.DisallowedOps == "" &&
+		len(s.AllowedPackages) == 0
+}
+
 // DevelopmentSafetyConfig returns a config suitable for development (local packages only)
 func DevelopmentSafetyConfig() SafetyConfig {
 	return SafetyConfig{
