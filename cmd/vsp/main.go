@@ -76,8 +76,9 @@ Ready-to-use configs for 8 AI agents: docs/cli-agents/`,
 		// established before a CLI command creates its ADT client.
 		resolveConfig(cmd)
 		// Impact gate settings are enum-valued: reject invalid values at flag
-		// parse (mirrors --mode validation) so both server and CLI paths fail
-		// fast with the valid choices listed.
+		// parse. Stricter than --mode on purpose: safety enums are validated
+		// for every subcommand so a typo fails fast instead of silently
+		// running unguarded.
 		if err := validateImpactConfig(); err != nil {
 			return err
 		}

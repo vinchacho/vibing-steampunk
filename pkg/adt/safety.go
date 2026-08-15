@@ -98,11 +98,12 @@ const (
 	ImpactGateBlock  = "block"
 )
 
-// Impact gate thresholds (SafetyConfig.ImpactThreshold). Values intentionally
-// match the risk tier names produced by classifyImpactRisk.
+// Impact gate thresholds (SafetyConfig.ImpactThreshold). Deliberately aliased
+// to the risk tier constants produced by classifyImpactRisk (impact.go, same
+// package) so the threshold values and risk-tier strings cannot drift apart.
 const (
-	ImpactThresholdHigh   = "high"
-	ImpactThresholdMedium = "medium"
+	ImpactThresholdHigh   = riskHigh
+	ImpactThresholdMedium = riskMedium
 )
 
 // NormalizeImpactGate validates an impact gate value and returns it lowercased

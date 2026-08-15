@@ -426,6 +426,7 @@ func TestIsUnrestricted(t *testing.T) {
 		{"disallowed ops", SafetyConfig{DisallowedOps: "CDUA"}, false},
 		{"package allowlist", SafetyConfig{AllowedPackages: []string{"Z*"}}, false},
 		{"transport opt-in alone still unrestricted", SafetyConfig{EnableTransports: true, AllowTransportableEdits: true}, true},
+		{"impact gate alone still unrestricted", SafetyConfig{ImpactGate: ImpactGateBlock}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
