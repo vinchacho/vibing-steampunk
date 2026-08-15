@@ -520,9 +520,22 @@ func (c *Client) ActivatePackage(ctx context.Context, packageName string, maxObj
 		return nil, fmt.Errorf("batch activation failed: %w", err)
 	}
 	if !activation.Success && len(activation.Inactive) == 0 {
-		// Logical failure without a per-object inactive list: nothing below could
-		// attribute the failure, so stop instead of reporting objects as activated.
-		return nil, ActivationResultError(activation)
+		// Logical failure without a per-object inactive list: attribute the
+		// aggregate diagnostic to every requested object rather than letting the
+		// mapping below report them as activated.
+		reason := "activation failed"
+		if actErr := ActivationResultError(activation); actErr != nil {
+			reason = actErr.Error()
+		}
+		for _, ref := range refs {
+			result.Failed = append(result.Failed, ActivationFailed{
+				Name:   ref.Name,
+				Type:   refMeta[ref.URI].Type,
+				Reason: reason,
+			})
+		}
+		result.Summary = fmt.Sprintf("Activated 0 objects, %d failed", len(result.Failed))
+		return result, nil
 	}
 
 	// Build per-object reason strings from activation messages (keyed by ObjDescr/name).
