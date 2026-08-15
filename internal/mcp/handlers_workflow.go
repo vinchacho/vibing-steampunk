@@ -50,6 +50,7 @@ func (s *Server) handleWriteProgram(ctx context.Context, request mcp.CallToolReq
 		transport = t
 	}
 
+	ctx = applyImpactConfirm(ctx, request)
 	result, err := s.adtClient.WriteProgram(ctx, programName, source, transport)
 	if err != nil {
 		return newToolResultError(fmt.Sprintf("WriteProgram failed: %v", err)), nil
@@ -75,6 +76,7 @@ func (s *Server) handleWriteClass(ctx context.Context, request mcp.CallToolReque
 		transport = t
 	}
 
+	ctx = applyImpactConfirm(ctx, request)
 	result, err := s.adtClient.WriteClass(ctx, className, source, transport)
 	if err != nil {
 		return newToolResultError(fmt.Sprintf("WriteClass failed: %v", err)), nil

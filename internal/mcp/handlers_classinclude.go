@@ -97,6 +97,7 @@ func (s *Server) handleUpdateClassInclude(ctx context.Context, request mcp.CallT
 		transport = t
 	}
 
+	ctx = applyImpactConfirm(ctx, request)
 	err := s.adtClient.UpdateClassInclude(ctx, className, adt.ClassIncludeType(includeType), source, lockHandle, transport)
 	if err != nil {
 		return newToolResultError(fmt.Sprintf("Failed to update class include: %v", err)), nil

@@ -258,6 +258,19 @@ func newToolResultError(message string) *mcp.CallToolResult {
 	return result
 }
 
+// applyImpactConfirm reads the optional `confirm` tool argument and, when
+// non-empty, attaches it to ctx as an impact-gate confirmation token
+// (adt.WithImpactConfirm). Every tool that can surface an
+// *adt.ImpactBlockedError registers the parameter (see confirmParam), and
+// its handler calls this before the client call so a blocked write can be
+// retried unchanged with the token from the refusal.
+func applyImpactConfirm(ctx context.Context, request mcp.CallToolRequest) context.Context {
+	if token, ok := request.GetArguments()["confirm"].(string); ok && token != "" {
+		return adt.WithImpactConfirm(ctx, token)
+	}
+	return ctx
+}
+
 // ensureWSConnected ensures the WebSocket client is connected, creating it if needed.
 // Returns error result if connection fails, nil on success.
 func (s *Server) ensureWSConnected(ctx context.Context, toolName string) *mcp.CallToolResult {

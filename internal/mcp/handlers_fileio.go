@@ -48,6 +48,7 @@ func (s *Server) handleDeployFromFile(ctx context.Context, request mcp.CallToolR
 		transport = t
 	}
 
+	ctx = applyImpactConfirm(ctx, request)
 	result, err := s.adtClient.DeployFromFile(ctx, filePath, packageName, transport)
 	if err != nil {
 		return newToolResultError(fmt.Sprintf("DeployFromFile failed: %v", err)), nil
@@ -186,6 +187,7 @@ func (s *Server) handleRenameObject(ctx context.Context, request mcp.CallToolReq
 	// Parse object type
 	objType := adt.CreatableObjectType(objTypeStr)
 
+	ctx = applyImpactConfirm(ctx, request)
 	result, err := s.adtClient.RenameObject(ctx, objType, oldName, newName, packageName, transport)
 	if err != nil {
 		return newToolResultError(fmt.Sprintf("RenameObject failed: %v", err)), nil
@@ -250,6 +252,7 @@ func (s *Server) handleEditSource(ctx context.Context, request mcp.CallToolReque
 		Transport:       transport,
 	}
 
+	ctx = applyImpactConfirm(ctx, request)
 	result, err := s.adtClient.EditSourceWithOptions(ctx, objectURL, oldString, newString, opts)
 	if err != nil {
 		return newToolResultError(fmt.Sprintf("EditSource failed: %v", err)), nil

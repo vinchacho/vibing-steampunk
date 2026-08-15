@@ -131,6 +131,7 @@ func (s *Server) handleUpdateSource(ctx context.Context, request mcp.CallToolReq
 		sourceURL = objectURL + "/source/main"
 	}
 
+	ctx = applyImpactConfirm(ctx, request)
 	err := s.adtClient.UpdateSource(ctx, sourceURL, source, lockHandle, transport)
 	if err != nil {
 		return newToolResultError(fmt.Sprintf("Failed to update source: %v", err)), nil
@@ -522,6 +523,7 @@ func (s *Server) handleDeleteObject(ctx context.Context, request mcp.CallToolReq
 		transport = t
 	}
 
+	ctx = applyImpactConfirm(ctx, request)
 	deleteResult, err := s.adtClient.DeleteObjectWithResult(ctx, objectURL, lockHandle, transport)
 	if err != nil {
 		return newToolResultError(fmt.Sprintf("Failed to delete object: %v", err)), nil
