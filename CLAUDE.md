@@ -14,7 +14,7 @@
 | **Modes** | `hyperfocused` (1 universal tool, **default**) · `focused` (103 whitelisted tools) · `expert` (154 registered tools; runtime count varies with feature detection and `--disabled-groups`) |
 | **Tests** | 1,363 `func Test` functions across 16 packages (incl. 35 integration tests behind the `integration` build tag) — `go test ./...` green as of 2026-08-15 |
 | **Platforms** | 9 (cross-compiled via Makefile) |
-| **Reports** | 194 in `reports/` (183 dated `YYYY-MM-DD-NNN-title.md` + 11 reference) |
+| **Reports** | 195 in `reports/` (184 dated `YYYY-MM-DD-NNN-title.md` + 11 reference) |
 | **Sync** | 0 commits behind upstream `oisee/vibing-steampunk` (last merge `b884ea7`, 2026-07-11) |
 
 > Counts are code-derived (see "Reconciling counts" below). If a number here disagrees with the code, the code wins — re-measure, don't copy forward.
