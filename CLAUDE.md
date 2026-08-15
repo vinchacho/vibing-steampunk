@@ -11,10 +11,10 @@
 | Metric | Value |
 |--------|-------|
 | **Latest version** | v2.39.0 |
-| **Modes** | `hyperfocused` (1 universal tool, **default**) · `focused` (102 whitelisted tools) · `expert` (153 registered tools; runtime count varies with feature detection and `--disabled-groups`) |
-| **Tests** | 1,325 `func Test` functions across 16 packages (incl. 35 integration tests behind the `integration` build tag) — `go test ./...` green as of 2026-07-11 |
+| **Modes** | `hyperfocused` (1 universal tool, **default**) · `focused` (103 whitelisted tools) · `expert` (154 registered tools; runtime count varies with feature detection and `--disabled-groups`) |
+| **Tests** | 1,363 `func Test` functions across 16 packages (incl. 35 integration tests behind the `integration` build tag) — `go test ./...` green as of 2026-08-15 |
 | **Platforms** | 9 (cross-compiled via Makefile) |
-| **Reports** | 190 in `reports/` (179 dated `YYYY-MM-DD-NNN-title.md` + 11 reference) |
+| **Reports** | 194 in `reports/` (183 dated `YYYY-MM-DD-NNN-title.md` + 11 reference) |
 | **Sync** | 0 commits behind upstream `oisee/vibing-steampunk` (last merge `b884ea7`, 2026-07-11) |
 
 > Counts are code-derived (see "Reconciling counts" below). If a number here disagrees with the code, the code wins — re-measure, don't copy forward.
@@ -26,7 +26,7 @@ Roadmap and rationale: [reports/2026-07-11-001-improvement-plan-and-landscape.md
 ### 1. Quality foundation
 - Routing tests for `internal/mcp/handlers_universal.go` (default mode is effectively untested — only `server_test.go` exists in `internal/mcp`)
 - Safe-by-default decision: `internal/mcp/server.go` defaults to `adt.UnrestrictedSafetyConfig()`; unused safe default at `pkg/adt/safety.go` (stderr warning ships now; flipping is a breaking change)
-- Cherry-pick candidates from upstream open PRs (#125 lock/session, #120 CSRF, #126 search filter) — see improvement report §5
+- ~~Cherry-pick candidates #125/#120/#126~~ superseded: upstream PR #156 (safety/session audit) and #150 (ActivateMultiple) cherry-picked 2026-08-15 — see [reports/2026-08-15-001-sap-mcp-skills-landscape-and-borrow-roadmap.md](reports/2026-08-15-001-sap-mcp-skills-landscape-and-borrow-roadmap.md); re-triage #108/#145/#152, pick up #148/#153/#154
 
 ### 2. Graph Engine (`pkg/graph/`) — In Progress
 - Done: core types, parser dep extraction, boundary analyzer, SQL/transport/config builders (`builder_sql.go`, `builder_transport.go`, `builder_config.go` — all tested), queries (slim/health/rename/impact/api-surface/transport_boundaries)

@@ -92,6 +92,7 @@ These tools replace 11 granular read/write operations with intelligent parameter
 |------|-------------|------|
 | `SyntaxCheck` | Check source code for syntax errors | Focused |
 | `Activate` | Activate an ABAP object | Expert |
+| `ActivateMultiple` | Batch activate specific objects in one request (dependency-aware, like Eclipse) | Focused |
 | `ActivatePackage` | Batch activate all inactive objects in package | Focused |
 | `RunUnitTests` | Execute ABAP Unit tests | Focused |
 | `RunATCCheck` | Run ATC code quality checks | Focused |
