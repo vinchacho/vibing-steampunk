@@ -6,9 +6,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/spf13/cobra"
 	"github.com/vinchacho/vibing-steampunk/pkg/adt"
 	"github.com/vinchacho/vibing-steampunk/pkg/config"
-	"github.com/spf13/cobra"
 )
 
 var (
@@ -159,6 +159,23 @@ func resolveCLISafety(cmd *cobra.Command, sys *config.SystemConfig) adt.SafetyCo
 		safety.TransportReadOnly = sys.TransportReadOnly
 		safety.AllowedTransports = append([]string(nil), sys.AllowedTransports...)
 		safety.AllowTransportableEdits = sys.AllowTransportableEdits
+		// Impact settings are enum-valued: normalize profile values, and keep
+		// the defaults (off/high) instead of letting an invalid string leak
+		// into gate comparisons.
+		if sys.ImpactGate != "" {
+			if v, err := adt.NormalizeImpactGate(sys.ImpactGate); err == nil {
+				safety.ImpactGate = v
+			} else {
+				fmt.Fprintf(os.Stderr, "WARNING: ignoring %v from system profile (using %q)\n", err, safety.ImpactGate)
+			}
+		}
+		if sys.ImpactThreshold != "" {
+			if v, err := adt.NormalizeImpactThreshold(sys.ImpactThreshold); err == nil {
+				safety.ImpactThreshold = v
+			} else {
+				fmt.Fprintf(os.Stderr, "WARNING: ignoring %v from system profile (using %q)\n", err, safety.ImpactThreshold)
+			}
+		}
 	}
 
 	applyAll := sys == nil
@@ -188,6 +205,12 @@ func resolveCLISafety(cmd *cobra.Command, sys *config.SystemConfig) adt.SafetyCo
 	}
 	if applyAll || safetySettingExplicit(cmd, "allow-transportable-edits", "SAP_ALLOW_TRANSPORTABLE_EDITS") {
 		safety.AllowTransportableEdits = cfg.AllowTransportableEdits
+	}
+	if applyAll || safetySettingExplicit(cmd, "impact-gate", "SAP_IMPACT_GATE") {
+		safety.ImpactGate = cfg.ImpactGate
+	}
+	if applyAll || safetySettingExplicit(cmd, "impact-threshold", "SAP_IMPACT_THRESHOLD") {
+		safety.ImpactThreshold = cfg.ImpactThreshold
 	}
 	return safety
 }

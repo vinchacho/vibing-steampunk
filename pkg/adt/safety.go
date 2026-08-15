@@ -70,14 +70,77 @@ type SafetyConfig struct {
 	//   - User takes responsibility for transport management
 	// Use --allow-transportable-edits or SAP_ALLOW_TRANSPORTABLE_EDITS=true to enable
 	AllowTransportableEdits bool
+
+	// ImpactGate controls blast-radius analysis on write operations:
+	//   "off" (default) - compute nothing
+	//   "advise"        - compute an impact summary before each logical write
+	//                     and attach it to the result
+	//   "block"         - additionally refuse writes whose risk is at or above
+	//                     ImpactThreshold until confirmed with a token
+	// Both "advise" and "block" compute; only "off" skips computation entirely.
+	// Empty is treated as "off". Use --impact-gate or SAP_IMPACT_GATE.
+	ImpactGate string
+
+	// ImpactThreshold sets the risk tier at which ImpactGate "block" refuses
+	// a write:
+	//   "high" (default) - only high-risk writes gate; "unknown" does not, so
+	//                      a broken lookup can never brick writes
+	//   "medium"         - medium- and high-risk writes gate, and "unknown"
+	//                      gates too
+	// Empty is treated as "high". Use --impact-threshold or SAP_IMPACT_THRESHOLD.
+	ImpactThreshold string
+}
+
+// Impact gate modes (SafetyConfig.ImpactGate).
+const (
+	ImpactGateOff    = "off"
+	ImpactGateAdvise = "advise"
+	ImpactGateBlock  = "block"
+)
+
+// Impact gate thresholds (SafetyConfig.ImpactThreshold). Values intentionally
+// match the risk tier names produced by classifyImpactRisk.
+const (
+	ImpactThresholdHigh   = "high"
+	ImpactThresholdMedium = "medium"
+)
+
+// NormalizeImpactGate validates an impact gate value and returns it lowercased
+// and trimmed. Empty input returns the default ("off"). Invalid values return
+// an error listing the valid choices.
+func NormalizeImpactGate(v string) (string, error) {
+	v = strings.ToLower(strings.TrimSpace(v))
+	switch v {
+	case "":
+		return ImpactGateOff, nil
+	case ImpactGateOff, ImpactGateAdvise, ImpactGateBlock:
+		return v, nil
+	}
+	return "", fmt.Errorf("invalid impact gate: %q (must be 'off', 'advise', or 'block')", v)
+}
+
+// NormalizeImpactThreshold validates an impact threshold value and returns it
+// lowercased and trimmed. Empty input returns the default ("high"). Invalid
+// values return an error listing the valid choices.
+func NormalizeImpactThreshold(v string) (string, error) {
+	v = strings.ToLower(strings.TrimSpace(v))
+	switch v {
+	case "":
+		return ImpactThresholdHigh, nil
+	case ImpactThresholdHigh, ImpactThresholdMedium:
+		return v, nil
+	}
+	return "", fmt.Errorf("invalid impact threshold: %q (must be 'high' or 'medium')", v)
 }
 
 // DefaultSafetyConfig returns a safe default configuration (read-only, no free SQL)
 func DefaultSafetyConfig() SafetyConfig {
 	return SafetyConfig{
-		ReadOnly:     true,
-		BlockFreeSQL: true,
-		AllowedOps:   "RSQTI", // Read, Search, Query, Test, Intelligence only
+		ReadOnly:        true,
+		BlockFreeSQL:    true,
+		AllowedOps:      "RSQTI", // Read, Search, Query, Test, Intelligence only
+		ImpactGate:      ImpactGateOff,
+		ImpactThreshold: ImpactThresholdHigh,
 	}
 }
 
@@ -85,9 +148,11 @@ func DefaultSafetyConfig() SafetyConfig {
 // WARNING: Use with caution - allows all operations including destructive ones
 func UnrestrictedSafetyConfig() SafetyConfig {
 	return SafetyConfig{
-		ReadOnly:     false,
-		BlockFreeSQL: false,
-		AllowedOps:   "", // Empty = all allowed
+		ReadOnly:        false,
+		BlockFreeSQL:    false,
+		AllowedOps:      "", // Empty = all allowed
+		ImpactGate:      ImpactGateOff,
+		ImpactThreshold: ImpactThresholdHigh,
 	}
 }
 
@@ -392,6 +457,13 @@ func (s *SafetyConfig) String() string {
 
 	if s.AllowTransportableEdits {
 		parts = append(parts, "TRANSPORTABLE-EDITS-ALLOWED")
+	}
+
+	if s.ImpactGate == ImpactGateAdvise || s.ImpactGate == ImpactGateBlock {
+		parts = append(parts, fmt.Sprintf("ImpactGate=%s", s.ImpactGate))
+		if s.ImpactThreshold == ImpactThresholdMedium {
+			parts = append(parts, "ImpactThreshold=medium")
+		}
 	}
 
 	if len(parts) == 0 {

@@ -39,6 +39,8 @@ type SystemConfig struct {
 	TransportReadOnly       bool     `json:"transport_read_only,omitempty"`
 	AllowedTransports       []string `json:"allowed_transports,omitempty"`
 	AllowTransportableEdits bool     `json:"allow_transportable_edits,omitempty"`
+	ImpactGate              string   `json:"impact_gate,omitempty"`      // Blast-radius gate on writes: "off" (default), "advise", "block"
+	ImpactThreshold         string   `json:"impact_threshold,omitempty"` // Risk tier that gates in block mode: "high" (default), "medium" (also gates unknown)
 }
 
 // SystemsConfig is the root configuration containing all systems.

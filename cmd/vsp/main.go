@@ -9,11 +9,11 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 	"github.com/vinchacho/vibing-steampunk/internal/mcp"
 	"github.com/vinchacho/vibing-steampunk/pkg/adt"
 	"github.com/vinchacho/vibing-steampunk/pkg/config"
-	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 var (
@@ -75,6 +75,12 @@ Ready-to-use configs for 8 AI agents: docs/cli-agents/`,
 		// server and CLI subcommands. In particular, safety policy must be
 		// established before a CLI command creates its ADT client.
 		resolveConfig(cmd)
+		// Impact gate settings are enum-valued: reject invalid values at flag
+		// parse (mirrors --mode validation) so both server and CLI paths fail
+		// fast with the valid choices listed.
+		if err := validateImpactConfig(); err != nil {
+			return err
+		}
 		if cfg.Verbose {
 			adt.SetLogOutput(os.Stderr)
 		}
@@ -130,6 +136,8 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&cfg.TransportReadOnly, "transport-read-only", false, "Only allow read operations on transports (list, get)")
 	rootCmd.PersistentFlags().StringSliceVar(&cfg.AllowedTransports, "allowed-transports", nil, "Restrict transport operations to specific transports (comma-separated, supports wildcards like A4HK*)")
 	rootCmd.PersistentFlags().BoolVar(&cfg.AllowTransportableEdits, "allow-transportable-edits", false, "Allow editing objects in transportable packages (requires transport parameter)")
+	rootCmd.PersistentFlags().StringVar(&cfg.ImpactGate, "impact-gate", "off", "Blast-radius gate on writes: off, advise (attach impact summary to write results), block (additionally refuse high-impact writes until confirmed)")
+	rootCmd.PersistentFlags().StringVar(&cfg.ImpactThreshold, "impact-threshold", "high", "Risk tier at which --impact-gate=block refuses writes: high (default), medium (also gates unknown risk)")
 
 	// Mode options
 	rootCmd.Flags().StringVar(&cfg.Mode, "mode", "hyperfocused", "Tool mode: hyperfocused (single universal SAP tool), focused (100 tools), or expert (147 tools)")
@@ -181,6 +189,8 @@ func init() {
 	_ = viper.BindPFlag("transport-read-only", rootCmd.PersistentFlags().Lookup("transport-read-only"))
 	_ = viper.BindPFlag("allowed-transports", rootCmd.PersistentFlags().Lookup("allowed-transports"))
 	_ = viper.BindPFlag("allow-transportable-edits", rootCmd.PersistentFlags().Lookup("allow-transportable-edits"))
+	_ = viper.BindPFlag("impact-gate", rootCmd.PersistentFlags().Lookup("impact-gate"))
+	_ = viper.BindPFlag("impact-threshold", rootCmd.PersistentFlags().Lookup("impact-threshold"))
 	viper.BindPFlag("mode", rootCmd.Flags().Lookup("mode"))
 	viper.BindPFlag("disabled-groups", rootCmd.Flags().Lookup("disabled-groups"))
 	viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
@@ -261,6 +271,9 @@ func runServer(cmd *cobra.Command, args []string) error {
 		}
 		if cfg.AllowTransportableEdits {
 			fmt.Fprintf(os.Stderr, "[VERBOSE] Safety: Transportable edits ENABLED (can modify non-local objects)\n")
+		}
+		if cfg.ImpactGate == adt.ImpactGateAdvise || cfg.ImpactGate == adt.ImpactGateBlock {
+			fmt.Fprintf(os.Stderr, "[VERBOSE] Safety: Impact gate %s (threshold: %s)\n", cfg.ImpactGate, cfg.ImpactThreshold)
 		}
 		if !cfg.ReadOnly && !cfg.BlockFreeSQL && cfg.AllowedOps == "" && cfg.DisallowedOps == "" && len(cfg.AllowedPackages) == 0 {
 			fmt.Fprintf(os.Stderr, "[VERBOSE] Safety: UNRESTRICTED (no safety checks active)\n")
@@ -419,6 +432,16 @@ func resolveConfig(cmd *cobra.Command) {
 	if !cmd.Flags().Changed("allow-transportable-edits") {
 		cfg.AllowTransportableEdits = viper.GetBool("ALLOW_TRANSPORTABLE_EDITS")
 	}
+	if !cmd.Flags().Changed("impact-gate") {
+		if v := viper.GetString("IMPACT_GATE"); v != "" {
+			cfg.ImpactGate = v
+		}
+	}
+	if !cmd.Flags().Changed("impact-threshold") {
+		if v := viper.GetString("IMPACT_THRESHOLD"); v != "" {
+			cfg.ImpactThreshold = v
+		}
+	}
 
 	// Feature configuration: flag > SAP_FEATURE_* env
 	if !cmd.Flags().Changed("feature-hana") {
@@ -474,6 +497,24 @@ func resolveConfig(cmd *cobra.Command) {
 	} else {
 		cfg.KeepAliveInterval, _ = cmd.Flags().GetDuration("keepalive")
 	}
+}
+
+// validateImpactConfig normalizes and validates the impact gate settings
+// resolved from flags and environment (SAP_IMPACT_GATE / SAP_IMPACT_THRESHOLD).
+// Called from the root PersistentPreRunE so every subcommand inherits it.
+func validateImpactConfig() error {
+	gate, err := adt.NormalizeImpactGate(cfg.ImpactGate)
+	if err != nil {
+		return err
+	}
+	cfg.ImpactGate = gate
+
+	threshold, err := adt.NormalizeImpactThreshold(cfg.ImpactThreshold)
+	if err != nil {
+		return err
+	}
+	cfg.ImpactThreshold = threshold
+	return nil
 }
 
 func validateConfig() error {
