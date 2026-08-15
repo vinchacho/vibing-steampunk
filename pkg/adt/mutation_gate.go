@@ -21,6 +21,23 @@ func mutationPackageAlreadyChecked(ctx context.Context) bool {
 	return checked
 }
 
+type impactComputedKey struct{}
+
+// withImpactComputed stashes the blast-radius summary an outer write workflow
+// computed before acquiring its lock, so downstream policy checks (block-mode
+// enforcement) can read it without recomputing — mirroring the
+// package-checked marker above.
+func withImpactComputed(ctx context.Context, s *ImpactSummary) context.Context {
+	return context.WithValue(ctx, impactComputedKey{}, s)
+}
+
+// impactFromContext returns the stashed impact summary, or nil when the outer
+// workflow did not compute one (gate off, or a create-path write).
+func impactFromContext(ctx context.Context) *ImpactSummary {
+	s, _ := ctx.Value(impactComputedKey{}).(*ImpactSummary)
+	return s
+}
+
 // MutationSurface identifies the object surface a mutation targets. Different
 // surfaces require different metadata resolution strategies (ADT SearchObject,
 // UI5 BSP metadata, etc.). Use SurfaceADT for standard ABAP objects.

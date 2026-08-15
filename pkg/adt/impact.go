@@ -64,6 +64,34 @@ func classifyImpactRisk(s *ImpactSummary) string {
 	}
 }
 
+// impactGateActive reports whether blast-radius computation is enabled.
+// Deliberately an allowlist of the two active modes — NOT `!= ImpactGateOff`
+// — so an unrecognized value that slipped past config normalization stays
+// inert instead of silently enabling network calls per write.
+func impactGateActive(cfg *SafetyConfig) bool {
+	return cfg.ImpactGate == ImpactGateAdvise || cfg.ImpactGate == ImpactGateBlock
+}
+
+// computeURLWriteImpact derives the whole-object identity from an ADT object
+// URL (EditSource receives only a URL, possibly pointing at /source/main or a
+// class include) and computes the write-impact summary for it. An unmappable
+// URL degrades inside ComputeWriteImpact rather than erroring: the name may
+// be empty and an unknown TADIR type simply skips the transport-recency leg.
+func (c *Client) computeURLWriteImpact(ctx context.Context, objectURL string) *ImpactSummary {
+	normalized := normalizeObjectURLForPackageCheck(objectURL)
+	name, err := objectNameFromURL(normalized)
+	if err != nil {
+		name = ""
+	}
+	// extractTypeFromURI yields "CLAS/OC"-style workbench types; E071 keys on
+	// the bare R3TR TADIR type ("CLAS").
+	tadirType := extractTypeFromURI(normalized)
+	if idx := strings.Index(tadirType, "/"); idx >= 0 {
+		tadirType = tadirType[:idx]
+	}
+	return c.ComputeWriteImpact(ctx, normalized, name, tadirType, "")
+}
+
 // ComputeWriteImpact builds the blast-radius summary for objectURL. It never
 // returns an error: failures degrade to Available=false (design §Degradation
 // ladder) so a broken where-used lookup can annotate but never fail a write.

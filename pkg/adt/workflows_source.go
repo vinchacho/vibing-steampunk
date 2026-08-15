@@ -166,6 +166,7 @@ type WriteSourceResult struct {
 	SyntaxErrors []SyntaxCheckResult `json:"syntaxErrors,omitempty"`
 	Activation   *ActivationResult   `json:"activation,omitempty"`
 	TestResults  *UnitTestResult     `json:"testResults,omitempty"` //nolint:misspell // CLAS is the SAP ADT object type.
+	Impact       *ImpactSummary      `json:"impact,omitempty"`
 	Message      string              `json:"message,omitempty"`
 }
 
@@ -255,6 +256,17 @@ func (c *Client) WriteSource(ctx context.Context, objectType, name, source strin
 	} else {
 		mutation.ObjectURL = writeSourceObjectURL(objectType, name)
 	}
+	// Advisory blast radius: computed once per logical write, at the same
+	// point as the package pre-check — before the lock is acquired, so no
+	// stateless call lands between LOCK and PUT. Update path only: a
+	// brand-new object has no callers to analyze. objectType here is the
+	// bare TADIR type ("PROG"/"CLAS"/...); opts.Package is a best-effort
+	// own-package hint (usually empty on updates, which is fine).
+	var impact *ImpactSummary
+	if actualMode != WriteModeCreate && impactGateActive(&c.config.Safety) {
+		impact = c.ComputeWriteImpact(ctx, mutation.ObjectURL, name, objectType, opts.Package)
+		ctx = withImpactComputed(ctx, impact)
+	}
 	if err := c.checkMutation(ctx, mutation); err != nil {
 		return nil, err
 	}
@@ -263,9 +275,12 @@ func (c *Client) WriteSource(ctx context.Context, objectType, name, source strin
 	// Execute create or update workflow
 	if actualMode == WriteModeCreate {
 		return c.writeSourceCreate(ctx, objectType, name, source, opts)
-	} else {
-		return c.writeSourceUpdate(ctx, objectType, name, source, opts)
 	}
+	updateResult, err := c.writeSourceUpdate(ctx, objectType, name, source, opts)
+	if updateResult != nil {
+		updateResult.Impact = impact
+	}
+	return updateResult, err
 }
 
 func writeSourceObjectURL(objectType, name string) string {
