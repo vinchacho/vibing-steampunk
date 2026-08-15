@@ -513,6 +513,86 @@ func TestWriteProgramUnderBlockInheritsPrimitiveGate(t *testing.T) {
 	}
 }
 
+// --- Task 8c: primitive-level block enforcement in Client.UpdateClassInclude ---
+//
+// UpdateClassInclude issues its own PUT behind its own checkMutation(OpUpdate,
+// ...) and is reachable without a ctx marker: the expert UpdateClassInclude
+// tool, the hyperfocused routeClassIncludeAction, and UpdateFromFile's
+// class-include branch. The guard mirrors UpdateSource's. The identity
+// machinery needs no change: canonicalizeObjectURL maps the include URL to
+// the parent class, so EditSource's include path (which stashes (OpUpdate,
+// includeURL)) origin-matches and honors its confirmed marker.
+
+// (8c-a) Raw UpdateClassInclude on a high-risk class under gate "block":
+// refused with *ImpactBlockedError before any PUT; retrying the same call
+// with the issued token succeeds.
+func TestRawUpdateClassIncludeBlockedAtHighRiskAndConfirmRetry(t *testing.T) {
+	mock := &methodPathMock{routes: []routedResponse{
+		{method: http.MethodPost, pathSubstring: "usageReferences", status: http.StatusOK, body: highImpactUsageXML(30)},
+		{method: http.MethodPost, pathSubstring: "datapreview/freestyle", status: http.StatusOK, body: impactEmptyE071XML},
+		{method: http.MethodPut, pathSubstring: "/includes/testclasses", status: http.StatusOK, body: ""},
+	}}
+	client := newImpactWorkflowClient(mock)
+	client.Safety().ImpactGate = ImpactGateBlock
+	client.Safety().ImpactThreshold = ImpactThresholdHigh
+
+	err := client.UpdateClassInclude(context.Background(),
+		"ZCL_DEMO_GATED", ClassIncludeTestClasses, "CLASS ltc_test DEFINITION FOR TESTING.", "SYNTHETIC-HANDLE", "")
+	if err == nil {
+		t.Fatal("UpdateClassInclude() error = nil, want impact block")
+	}
+	var blocked *ImpactBlockedError
+	if !errors.As(err, &blocked) {
+		t.Fatalf("errors.As(*ImpactBlockedError) = false for %T: %v", err, err)
+	}
+	if !impactTokenPattern.MatchString(blocked.Token) {
+		t.Fatalf("Token %q does not match %s", blocked.Token, impactTokenPattern)
+	}
+	if blocked.Summary == nil || blocked.Summary.Risk != riskHigh {
+		t.Fatalf("Summary = %+v, want risk %q", blocked.Summary, riskHigh)
+	}
+	if idx := callIndex(mock.calls, isPutCall); idx >= 0 {
+		t.Fatalf("PUT request at call %d — blocked raw UpdateClassInclude must never reach the PUT", idx)
+	}
+
+	// Confirmed retry: same call, token in ctx → PUT goes through.
+	err = client.UpdateClassInclude(WithImpactConfirm(context.Background(), blocked.Token),
+		"ZCL_DEMO_GATED", ClassIncludeTestClasses, "CLASS ltc_test DEFINITION FOR TESTING.", "SYNTHETIC-HANDLE", "")
+	if err != nil {
+		t.Fatalf("confirmed UpdateClassInclude() error = %v, want success", err)
+	}
+	if idx := callIndex(mock.calls, isPutCall); idx < 0 {
+		t.Fatal("no PUT recorded — confirmed raw UpdateClassInclude never reached SAP")
+	}
+}
+
+// (8c-b) Same asymmetry as the UpdateSource primitive: advise mode must NOT
+// compute impact at the include primitive — no result struct exists to
+// attach a summary to. No impact traffic; the PUT goes straight through.
+func TestRawUpdateClassIncludeAdviseModeComputesNothing(t *testing.T) {
+	mock := &methodPathMock{routes: []routedResponse{
+		{method: http.MethodPut, pathSubstring: "/includes/testclasses", status: http.StatusOK, body: ""},
+	}}
+	client := newImpactWorkflowClient(mock)
+	client.Safety().ImpactGate = ImpactGateAdvise
+	client.Safety().ImpactThreshold = ImpactThresholdMedium
+
+	err := client.UpdateClassInclude(context.Background(),
+		"ZCL_DEMO_GATED", ClassIncludeTestClasses, "CLASS ltc_test DEFINITION FOR TESTING.", "SYNTHETIC-HANDLE", "")
+	if err != nil {
+		t.Fatalf("UpdateClassInclude() error = %v, want advise mode to pass through the primitive", err)
+	}
+	if idx := callIndex(mock.calls, isImpactRefsCall); idx >= 0 {
+		t.Fatalf("usageReferences request at call %d — advise mode must not compute impact at the primitive", idx)
+	}
+	if idx := callIndex(mock.calls, isImpactSQLCall); idx >= 0 {
+		t.Fatalf("E071 RunQuery request at call %d — advise mode must not compute impact at the primitive", idx)
+	}
+	if idx := callIndex(mock.calls, isPutCall); idx < 0 {
+		t.Fatal("no PUT recorded — write never reached SAP")
+	}
+}
+
 // --- Medium-tier gating (conformance fix 2) ---
 //
 // highImpactUsageXML(10) yields 10 callers and no transport touches:

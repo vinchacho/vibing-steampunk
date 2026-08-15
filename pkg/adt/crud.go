@@ -158,8 +158,26 @@ func (c *Client) UpdateSource(ctx context.Context, objectSourceURL string, sourc
 	// preserves the no-impact-traffic-on-refused-writes invariant (it is
 	// local and idempotent; checkMutation below re-runs the same
 	// OpUpdate/"UpdateSource" check to produce the refusal error).
+	//
+	// Create-fill exemption: the source-fill step of a just-created object
+	// (marked via withImpactCreateFill) skips the guard entirely — see the
+	// marker's doc comment in mutation_gate.go.
+	//
+	// Timing note: for markerless block-mode routes this computation inserts
+	// up to 3 stateless requests (usageReferences + E071/E070 RunQuery)
+	// between the caller's LOCK and the PUT. Precedent: the AllowedPackages
+	// SearchObject lookup already lands in the same window. Watch in
+	// integration for lock-session sensitivity.
+	//
+	// Confirm-retry note: on a retry carrying WithImpactConfirm the blast
+	// radius is recomputed here BEFORE the token is consumed at the gate. If
+	// the recomputed risk has dropped below the threshold, the gate no longer
+	// blocks, the token is never consumed, and it simply ages out —
+	// intentional (the token authorizes a risk level, not a bypass); do not
+	// "optimize" the recomputation away.
 	if c.config.Safety.ImpactGate == ImpactGateBlock &&
 		impactMarkerFromContext(ctx) == nil &&
+		!impactCreateFillExempt(ctx) &&
 		c.checkSafety(OpUpdate, "UpdateSource") == nil {
 		ctx = withImpactComputed(ctx, c.computeURLWriteImpact(ctx, objectSourceURL), OpUpdate, objectSourceURL)
 	}
@@ -1155,6 +1173,24 @@ func (c *Client) GetClassInclude(ctx context.Context, className string, includeT
 func (c *Client) UpdateClassInclude(ctx context.Context, className string, includeType ClassIncludeType, source string, lockHandle string, transport string) error {
 	sourceURL := GetClassIncludeSourceURL(className, includeType)
 	transport = c.effectiveLockTransport(lockHandle, transport)
+
+	// Primitive-level block enforcement (Task 8c) — exact mirror of the
+	// UpdateSource guard above (see its comment for the advise asymmetry,
+	// the create-fill exemption, the LOCK→PUT timing note, and the
+	// confirm-retry recomputation note). UpdateClassInclude issues its own
+	// PUT and is reachable markerless via the expert UpdateClassInclude
+	// tool, the hyperfocused routeClassIncludeAction, and UpdateFromFile's
+	// class-include branch. The identity machinery works unchanged:
+	// canonicalizeObjectURL maps the include URL to the parent class, so
+	// EditSource's include path (which stashes (OpUpdate, includeURL))
+	// origin-matches and honors its confirmed marker, while WriteSource's
+	// TestSource path skips on op mismatch.
+	if c.config.Safety.ImpactGate == ImpactGateBlock &&
+		impactMarkerFromContext(ctx) == nil &&
+		!impactCreateFillExempt(ctx) &&
+		c.checkSafety(OpUpdate, "UpdateClassInclude") == nil {
+		ctx = withImpactComputed(ctx, c.computeURLWriteImpact(ctx, sourceURL), OpUpdate, sourceURL)
+	}
 
 	// Unified mutation policy gate (op type + package + transport)
 	if err := c.checkMutation(ctx, MutationContext{

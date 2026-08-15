@@ -321,6 +321,11 @@ func (c *Client) writeSourceObjectExists(ctx context.Context, objectType, name s
 
 // writeSourceCreate handles creation workflow
 func (c *Client) writeSourceCreate(ctx context.Context, objectType, name, source string, opts *WriteSourceOptions) (*WriteSourceResult, error) {
+	// Every branch below fills a just-created object (directly or via the
+	// delegated Create*/WriteClass workflows) — exempt the fill writes from
+	// the primitive impact guards (see withImpactCreateFill).
+	ctx = withImpactCreateFill(ctx)
+
 	result := &WriteSourceResult{
 		ObjectType: objectType,
 		ObjectName: name,

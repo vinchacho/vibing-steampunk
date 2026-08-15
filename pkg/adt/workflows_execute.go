@@ -81,6 +81,11 @@ func (c *Client) ExecuteABAP(ctx context.Context, code string, opts *ExecuteABAP
 		return nil, err
 	}
 	ctx = withMutationPackageChecked(ctx)
+	// The UpdateSource below fills a freshly created, uniquely named $TMP
+	// temp program — exempt it from the primitive impact guard (see
+	// withImpactCreateFill). Without this, a where-used outage under
+	// threshold "medium" would brick ExecuteABAP entirely.
+	ctx = withImpactCreateFill(ctx)
 
 	if opts == nil {
 		opts = &ExecuteABAPOptions{}

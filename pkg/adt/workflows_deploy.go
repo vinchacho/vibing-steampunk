@@ -44,6 +44,9 @@ func (c *Client) CreateFromFile(ctx context.Context, filePath, packageName, tran
 		return nil, err
 	}
 	ctx = withMutationPackageChecked(ctx)
+	// Step 7's UpdateSource fills the object created in step 3 — exempt it
+	// from the primitive impact guard (see withImpactCreateFill).
+	ctx = withImpactCreateFill(ctx)
 
 	// 1. Parse file to detect type and name
 	info, err := ParseABAPFile(filePath)

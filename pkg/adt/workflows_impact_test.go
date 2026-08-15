@@ -194,6 +194,139 @@ func TestWriteSourceCreateSkipsImpactEvenWhenAdvised(t *testing.T) {
 	}
 }
 
+// --- Create-fill exemption (Task 8c) ---
+//
+// The primitive-level block guards in UpdateSource/UpdateClassInclude must
+// not fire on the source-fill step of a just-created object: its blast
+// radius is definitionally empty, and a degraded-mode block (risk "unknown"
+// under threshold "medium" during a where-used outage) would strand a
+// partial create between LOCK and PUT. The tests below stage a FAILING
+// usageReferences route as a tripwire: any accidental impact computation
+// degrades to risk "unknown", which threshold "medium" blocks — so a gate
+// leak turns into a hard test failure, and a passing create additionally
+// proves zero impact requests were issued.
+
+// WriteSource create mode under gate "block": the whole create-then-fill
+// flow completes and no impact traffic is issued at the fill UpdateSource.
+func TestWriteSourceCreateUnderBlockCompletesDespiteFailingWhereUsed(t *testing.T) {
+	mock := &methodPathMock{routes: []routedResponse{
+		// Tripwire: any impact computation fails the where-used leg → risk
+		// "unknown" → blocked at threshold "medium" → create fails below.
+		{method: http.MethodPost, pathSubstring: "usageReferences", status: http.StatusInternalServerError, body: "where-used outage"},
+		// Existence probe: 404 → create path.
+		{method: http.MethodGet, pathSubstring: "/source/main", status: http.StatusNotFound, body: "not found"},
+		// CreateObject preflight packageExists($TMP).
+		{method: http.MethodPost, pathSubstring: "nodestructure", status: http.StatusOK, body: packageNodeStructureXML},
+		// Lock/unlock (more specific than the create POST — must come first).
+		{method: http.MethodPost, pathSubstring: "/programs/programs/ZTEST", status: http.StatusOK, body: syntheticLocalLockXML},
+		// CreateObject POST.
+		{method: http.MethodPost, pathSubstring: "/programs/programs", status: http.StatusOK, body: ""},
+		// Fill PUT.
+		{method: http.MethodPut, pathSubstring: "/source/main", status: http.StatusOK, body: ""},
+		{method: http.MethodPost, pathSubstring: "/activation", status: http.StatusOK, body: ""},
+	}}
+	client := newImpactWorkflowClient(mock)
+	client.Safety().ImpactGate = ImpactGateBlock
+	client.Safety().ImpactThreshold = ImpactThresholdMedium
+
+	result, err := client.WriteSource(context.Background(), "PROG", "ZTEST", "REPORT ztest.", &WriteSourceOptions{
+		Mode:        WriteModeCreate,
+		Description: "Synthetic program",
+		Package:     "$TMP",
+	})
+	if err != nil {
+		t.Fatalf("WriteSource() error = %v", err)
+	}
+	if !result.Success || result.Mode != "created" {
+		t.Fatalf("create did not complete under block mode: %#v", result)
+	}
+	if n := countCalls(mock.calls, isImpactRefsCall); n != 0 {
+		t.Fatalf("usageReferences requests = %d, want 0 — create-fill must not compute impact", n)
+	}
+	if n := countCalls(mock.calls, isImpactSQLCall); n != 0 {
+		t.Fatalf("E071 RunQuery requests = %d, want 0 — create-fill must not compute impact", n)
+	}
+	if idx := callIndex(mock.calls, isPutCall); idx < 0 {
+		t.Fatal("no PUT recorded — fill write never reached SAP")
+	}
+}
+
+// Direct CreateAndActivateProgram under gate "block": zero impact requests.
+// Here the tripwire is a HIGH-risk where-used response at threshold "high" —
+// if the fill UpdateSource computed impact, the create would block.
+func TestCreateAndActivateProgramUnderBlockSkipsImpact(t *testing.T) {
+	mock := &methodPathMock{routes: []routedResponse{
+		{method: http.MethodPost, pathSubstring: "usageReferences", status: http.StatusOK, body: highImpactUsageXML(30)},
+		{method: http.MethodPost, pathSubstring: "datapreview/freestyle", status: http.StatusOK, body: impactEmptyE071XML},
+		{method: http.MethodPost, pathSubstring: "nodestructure", status: http.StatusOK, body: packageNodeStructureXML},
+		{method: http.MethodPost, pathSubstring: "/programs/programs/ZTEST", status: http.StatusOK, body: syntheticLocalLockXML},
+		{method: http.MethodPost, pathSubstring: "/programs/programs", status: http.StatusOK, body: ""},
+		{method: http.MethodPut, pathSubstring: "/source/main", status: http.StatusOK, body: ""},
+		{method: http.MethodPost, pathSubstring: "/activation", status: http.StatusOK, body: ""},
+	}}
+	client := newImpactWorkflowClient(mock)
+	client.Safety().ImpactGate = ImpactGateBlock
+	client.Safety().ImpactThreshold = ImpactThresholdHigh
+
+	result, err := client.CreateAndActivateProgram(context.Background(),
+		"ZTEST", "Synthetic program", "$TMP", "REPORT ztest.", "")
+	if err != nil {
+		t.Fatalf("CreateAndActivateProgram() error = %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("create did not complete under block mode: %#v", result)
+	}
+	if n := countCalls(mock.calls, isImpactRefsCall); n != 0 {
+		t.Fatalf("usageReferences requests = %d, want 0 — create-fill must not compute impact", n)
+	}
+	if n := countCalls(mock.calls, isImpactSQLCall); n != 0 {
+		t.Fatalf("E071 RunQuery requests = %d, want 0 — create-fill must not compute impact", n)
+	}
+}
+
+// CreateClassWithTests under gate "block": exercises BOTH exempted
+// primitives — the fill UpdateSource (main source) and the fill
+// UpdateClassInclude (test include) — with the failing-where-used tripwire
+// at threshold "medium". RunUnitTests is deliberately unrouted (404): the
+// workflow tolerates a test-run failure and still reports Success.
+func TestCreateClassWithTestsUnderBlockSkipsImpact(t *testing.T) {
+	mock := &methodPathMock{routes: []routedResponse{
+		{method: http.MethodPost, pathSubstring: "usageReferences", status: http.StatusInternalServerError, body: "where-used outage"},
+		{method: http.MethodPost, pathSubstring: "nodestructure", status: http.StatusOK, body: packageNodeStructureXML},
+		// CreateTestInclude POST (before the lock route: its path contains
+		// the class URL too).
+		{method: http.MethodPost, pathSubstring: "/includes", status: http.StatusOK, body: ""},
+		{method: http.MethodPost, pathSubstring: "/oo/classes/ZCL_DEMO_CF", status: http.StatusOK, body: syntheticLocalLockXML},
+		{method: http.MethodPost, pathSubstring: "/oo/classes", status: http.StatusOK, body: ""},
+		{method: http.MethodPut, pathSubstring: "/includes/testclasses", status: http.StatusOK, body: ""},
+		{method: http.MethodPut, pathSubstring: "/source/main", status: http.StatusOK, body: ""},
+		{method: http.MethodPost, pathSubstring: "/activation", status: http.StatusOK, body: ""},
+	}}
+	client := newImpactWorkflowClient(mock)
+	client.Safety().ImpactGate = ImpactGateBlock
+	client.Safety().ImpactThreshold = ImpactThresholdMedium
+
+	result, err := client.CreateClassWithTests(context.Background(),
+		"ZCL_DEMO_CF", "Synthetic class", "$TMP",
+		"CLASS zcl_demo_cf DEFINITION PUBLIC. ENDCLASS.",
+		"CLASS ltc_test DEFINITION FOR TESTING.", "")
+	if err != nil {
+		t.Fatalf("CreateClassWithTests() error = %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("create did not complete under block mode: %#v", result)
+	}
+	if n := countCalls(mock.calls, isImpactRefsCall); n != 0 {
+		t.Fatalf("usageReferences requests = %d, want 0 — create-fill must not compute impact", n)
+	}
+	if n := countCalls(mock.calls, isImpactSQLCall); n != 0 {
+		t.Fatalf("E071 RunQuery requests = %d, want 0 — create-fill must not compute impact", n)
+	}
+	if n := countCalls(mock.calls, isPutCall); n != 2 {
+		t.Fatalf("PUT requests = %d, want 2 (main source + test include)", n)
+	}
+}
+
 func TestEditSourceComputesImpactWhenAdvised(t *testing.T) {
 	mock := &methodPathMock{routes: []routedResponse{
 		{method: http.MethodPost, pathSubstring: "usageReferences", status: http.StatusOK, body: impactUsageXML},

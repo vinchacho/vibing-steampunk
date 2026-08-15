@@ -21,6 +21,27 @@ func mutationPackageAlreadyChecked(ctx context.Context) bool {
 	return checked
 }
 
+type impactCreateFillKey struct{}
+
+// withImpactCreateFill marks the source-fill step of a just-created object —
+// blast radius is definitionally empty (a brand-new object has no callers)
+// and a degraded-mode block here (risk "unknown" under threshold "medium"
+// during a where-used outage) would strand a partial create between LOCK and
+// PUT, the same rationale as the ungated cleanup DeleteObject. Set by the
+// create-then-fill workflows (writeSourceCreate, CreateFromFile,
+// CreateAndActivateProgram, CreateClassWithTests, ExecuteABAP's temp
+// program); honored by the primitive-level block guards in UpdateSource and
+// UpdateClassInclude, which skip impact computation when it is present.
+// Mirrors withMutationPackageChecked's shape.
+func withImpactCreateFill(ctx context.Context) context.Context {
+	return context.WithValue(ctx, impactCreateFillKey{}, true)
+}
+
+func impactCreateFillExempt(ctx context.Context) bool {
+	exempt, _ := ctx.Value(impactCreateFillKey{}).(bool)
+	return exempt
+}
+
 type impactComputedKey struct{}
 
 // impactComputedMarker is the ctx value stashed by outer write workflows: the
