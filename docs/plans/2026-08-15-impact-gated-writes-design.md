@@ -116,3 +116,7 @@ Each of these is a reviewed, deliberate decision — not an open bug.
 ## Out of scope (Phase 2)
 
 Transitive impact via the graph engine (`builder_adt.go` feeding `graph.Impact`; the schema reserves `transitive_depth`), caching, method-level granularity, and changing the default from `off` to `advise` (bundle with the safe-by-default flip).
+
+## Verification status
+
+Unit coverage is complete (`pkg/adt/impact*_test.go`, `workflows_impact_test.go`, `internal/mcp/handlers_source_test.go`). Live integration coverage exists in `pkg/adt/integration_impact_test.go` (build tag `integration`): the advisory attach and create exemption, the usageReferences round-trip with an `isResult` assumption probe, block mode's no-false-positive path at threshold `medium` on a fresh `$TMP` object (plus the real block → token → retry round trip whenever the live where-used lookup degrades), and the in-process token-store round trip. Deliberately unverified live: a guaranteed block on a genuinely high-risk object — that requires a seeded fixture package (≥ 25 callers or a recent transport touch) and is deferred to a manual sandbox canary (plan, Task 11 as-built note).

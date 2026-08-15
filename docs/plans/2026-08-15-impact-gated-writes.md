@@ -10,7 +10,7 @@
 
 **Design:** [2026-08-15-impact-gated-writes-design.md](2026-08-15-impact-gated-writes-design.md) (rewritten to as-built state in Task 10)
 
-**Status:** Tasks 1–10 done ✅ (see per-task marks and As-built notes). Task 11 (integration test + live verification) open.
+**Status:** All tasks 1–11 done ✅ (see per-task marks and As-built notes). Remaining follow-up: the manual sandbox canary for the guaranteed block path (see Task 11 as-built note).
 
 ---
 
@@ -304,7 +304,7 @@ Same pattern as Task 5. Commit `feat(adt): advisory impact on delete and rename`
 
 ---
 
-### Task 11: Integration test + full verification
+### Task 11: Integration test + full verification ✅
 
 **Files:**
 - Modify: `pkg/adt/integration_test.go` (tag `integration`): with gate `advise`, edit a `$TMP` object, assert the impact block exists and `available` is true or reason states why.
@@ -314,5 +314,15 @@ Same pattern as Task 5. Commit `feat(adt): advisory impact on delete and rename`
 - Manual (sandbox): `--impact-gate advise` → edit object with known callers → `impact` block in response; `--impact-gate block --impact-threshold medium` → block → token retry succeeds
 - `grep -c 'shouldRegister("' internal/mcp/tools_register.go` unchanged (no new tools, only params)
 - Confirm on the live system that object-level usageReferences result rows carry `isResult=true` (the counting loop skips `isResult="false"` grouping rows)
+
+**As-built:** Landed as a new `pkg/adt/integration_impact_test.go` (same `//go:build integration` tag; a split-out file follows the `browser_auth_integration_test.go` precedent, and the tests skip via `getIntegrationClient` when `SAP_*` env is absent). Names follow the repo's `TestIntegration_*` convention, so the run filter is `-run 'TestIntegration_Impact'`.
+
+*What the live suite covers:*
+- `TestIntegration_ImpactAdvisorySummary` (gate `advise`): WriteSource create carries NO impact block (create exemption); the subsequent update carries one — either `available: true` with a sane tier, or a stated `unavailable_reason` with risk `unknown`; the summary is logged. Then the live usageReferences round-trip: `FindReferences(objectURL, 0, 0)` on the created object, with the **isResult assumption probe** — rows are tallied by `isResult`; if rows exist and none carry `isResult=true` the test logs loudly (assumption probe, not a hard failure). A fresh caller-less object can return zero rows, so an inconclusive probe falls back to a read-only probe of `CL_ABAP_STRUCTDESCR` (same non-fatal timeout tolerance as `TestIntegration_FindReferences`).
+- `TestIntegration_ImpactBlockConfirmRoundTrip` (gate `block`, threshold `medium` — the strictest setting): the create path succeeding under block proves the create-fill exemption live; the update on the fresh 0-caller object must PROCEED (risk `low` is not gated even at `medium`) — the **no-false-positive** half of block coverage, with a hard failure if a fresh object blocks at any risk other than `unknown`. When the live where-used lookup degrades, risk `unknown` IS gated at `medium` (documented fail-closed), and the test then exercises the real block → token → `WithImpactConfirm` retry round trip. Finally, the confirmation-token store is verified deterministically on the live client instance, in-process with no SAP traffic: issue shape, wrong-token reject, consume via a canonically equivalent `/source/main` URL, single-use.
+
+*Deferred to the sandbox canary (manual):* a **guaranteed** block on a genuinely high-risk object — it needs an object with ≥ 25 callers or a recent transport touch, which cannot be assumed to exist on an arbitrary test system, and writing to a real high-caller object to manufacture one is exactly what the gate prevents. The "Manual (sandbox)" line above remains the canary's script, to be run against a seeded fixture package.
+
+*Verification run (2026-08-15, no live system — per scope):* `go build ./... && go vet ./... && go test ./... -count=1` all green; `go vet -tags=integration ./pkg/adt/` and `go build -tags=integration ./pkg/adt/` clean; `go test -tags=integration -list '.*' ./pkg/adt/` lists both new tests without executing them; `grep -c 'shouldRegister('` = 154 (unchanged); new file gofmt-clean.
 
 **Commit:** `test(adt): impact gate integration coverage`.
