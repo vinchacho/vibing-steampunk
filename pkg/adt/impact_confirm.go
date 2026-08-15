@@ -1,6 +1,7 @@
 package adt
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
@@ -8,6 +9,32 @@ import (
 	"sync"
 	"time"
 )
+
+type impactConfirmKey struct{}
+
+// WithImpactConfirm attaches a blast-radius confirmation token to ctx. When a
+// write is refused by the impact gate in block mode, the *ImpactBlockedError
+// carries a token; retrying the same call with that token on the context
+// authorizes it. Surfaced as the MCP `confirm` parameter and the CLI
+// `--confirm-impact` flag.
+func WithImpactConfirm(ctx context.Context, token string) context.Context {
+	return context.WithValue(ctx, impactConfirmKey{}, token)
+}
+
+// impactConfirmFromContext returns the confirmation token from ctx, or "".
+func impactConfirmFromContext(ctx context.Context) string {
+	token, _ := ctx.Value(impactConfirmKey{}).(string)
+	return token
+}
+
+// impactTokenOp is the stable string form of an OperationType used in
+// confirmation-token keys: the operation's single safety letter ("U" for
+// update, "D" for delete, "W" for workflow writes, ...). Both the issue and
+// the consume site live inside checkImpactGate and derive the key through
+// this function, so issue/consume keying stays consistent by construction.
+func impactTokenOp(op OperationType) string {
+	return string(rune(op))
+}
 
 // impactTokenTTL is how long an issued confirmation token stays valid.
 const impactTokenTTL = 10 * time.Minute

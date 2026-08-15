@@ -64,6 +64,73 @@ func classifyImpactRisk(s *ImpactSummary) string {
 	}
 }
 
+// ImpactBlockedError is the refusal returned by checkMutation step 4 when
+// the impact gate runs in block mode and the write's risk is at or above the
+// configured threshold. It carries the blast-radius summary and a fresh
+// single-use confirmation token; retrying the same call with the token
+// (adt.WithImpactConfirm / the MCP `confirm` parameter) proceeds. Callers can
+// detect it with errors.As.
+type ImpactBlockedError struct {
+	Summary *ImpactSummary
+	Token   string
+	Object  string
+	Op      string
+}
+
+// Error renders the refusal per design §Confirmation flow: the headline, the
+// blast-radius facts (callers/packages, most recent transport touch — or the
+// degradation reason), and the exact retry.
+func (e *ImpactBlockedError) Error() string {
+	var b strings.Builder
+	risk := riskUnknown
+	if e.Summary != nil {
+		risk = e.Summary.Risk
+	}
+	fmt.Fprintf(&b, "IMPACT GATE: refusing %s of %s (risk: %s).\n", e.Op, e.Object, risk)
+	switch {
+	case e.Summary == nil || !e.Summary.Available:
+		reason := "impact analysis unavailable"
+		if e.Summary != nil && e.Summary.Unavailable != "" {
+			reason = e.Summary.Unavailable
+		}
+		fmt.Fprintf(&b, "Impact analysis unavailable: %s.\n", reason)
+	default:
+		s := e.Summary
+		fmt.Fprintf(&b, "%d callers", s.Callers)
+		if n := len(s.Packages); n > 0 {
+			fmt.Fprintf(&b, " across %d package(s) (%s)", n, strings.Join(s.Packages, ", "))
+		}
+		if len(s.RecentTransports) > 0 {
+			t := s.RecentTransports[0]
+			fmt.Fprintf(&b, "; transport %s touched this object", t.Transport)
+			if t.Date != "" {
+				b.WriteString(" on " + t.Date)
+			}
+		}
+		b.WriteString(".\n")
+	}
+	fmt.Fprintf(&b, "To proceed, retry the same call with: confirm: %q\n", e.Token)
+	b.WriteString("Token expires in 10 minutes and is valid only for this object and operation.")
+	return b.String()
+}
+
+// impactOpVerb renders an OperationType as the verb used in the block-mode
+// refusal headline ("refusing update of ...").
+func impactOpVerb(op OperationType) string {
+	switch op {
+	case OpUpdate:
+		return "update"
+	case OpDelete:
+		return "delete"
+	case OpCreate:
+		return "create"
+	case OpWorkflow:
+		return "write"
+	default:
+		return "mutation"
+	}
+}
+
 // impactGateActive reports whether blast-radius computation is enabled.
 // Deliberately an allowlist of the two active modes — NOT `!= ImpactGateOff`
 // — so an unrecognized value that slipped past config normalization stays

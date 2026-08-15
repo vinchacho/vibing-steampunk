@@ -269,7 +269,7 @@ func (c *Client) WriteSource(ctx context.Context, objectType, name, source strin
 	if actualMode != WriteModeCreate && impactGateActive(&c.config.Safety) &&
 		c.checkSafety(mutation.Op, mutation.OpName) == nil {
 		impact = c.ComputeWriteImpact(ctx, mutation.ObjectURL, name, objectType, opts.Package)
-		ctx = withImpactComputed(ctx, impact)
+		ctx = withImpactComputed(ctx, impact, mutation.Op, mutation.ObjectURL)
 	}
 	if err := c.checkMutation(ctx, mutation); err != nil {
 		return nil, err

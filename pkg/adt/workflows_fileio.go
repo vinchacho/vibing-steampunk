@@ -47,7 +47,7 @@ func (c *Client) RenameObject(ctx context.Context, objType CreatableObjectType, 
 	// error.
 	if impactGateActive(&c.config.Safety) && c.checkSafety(OpDelete, "RenameObject") == nil {
 		result.Impact = c.computeURLWriteImpact(ctx, oldURL)
-		ctx = withImpactComputed(ctx, result.Impact)
+		ctx = withImpactComputed(ctx, result.Impact, OpDelete, oldURL)
 	}
 
 	// Unified mutation policy gate for the old object being deleted.

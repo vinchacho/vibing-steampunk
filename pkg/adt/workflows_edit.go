@@ -162,7 +162,7 @@ func (c *Client) EditSourceWithOptions(ctx context.Context, objectURL, oldString
 	var impact *ImpactSummary
 	if impactGateActive(&c.config.Safety) && c.checkSafety(OpUpdate, "EditSource") == nil {
 		impact = c.computeURLWriteImpact(ctx, objectURL)
-		ctx = withImpactComputed(ctx, impact)
+		ctx = withImpactComputed(ctx, impact, OpUpdate, objectURL)
 	}
 
 	// Unified mutation policy gate (op type + package + transport)

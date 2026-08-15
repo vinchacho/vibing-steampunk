@@ -961,7 +961,7 @@ func (c *Client) DeleteObjectWithResult(ctx context.Context, objectURL string, l
 	result := &DeleteResult{Object: objectURL}
 	if impactGateActive(&c.config.Safety) && c.checkSafety(OpDelete, "DeleteObject") == nil {
 		result.Impact = c.computeURLWriteImpact(ctx, objectURL)
-		ctx = withImpactComputed(ctx, result.Impact)
+		ctx = withImpactComputed(ctx, result.Impact, OpDelete, objectURL)
 	}
 	if err := c.DeleteObject(ctx, objectURL, lockHandle, transport); err != nil {
 		return nil, err
