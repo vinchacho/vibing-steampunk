@@ -352,6 +352,178 @@ func TestEditSourceRefusedByPolicySkipsImpact(t *testing.T) {
 	}
 }
 
+// --- Delete and rename paths (impact gate Task 6) ---
+//
+// Same contracts as the write paths above: gate "advise" computes exactly one
+// ImpactSummary per logical delete/rename and attaches it to the result, gate
+// off computes nothing, and a locally-refused mutation (read-only mode) never
+// spends network calls on blast-radius analysis.
+
+func isDeleteCall(c recordedCall) bool {
+	return c.method == http.MethodDelete
+}
+
+func TestDeleteObjectWithResultComputesImpactWhenAdvised(t *testing.T) {
+	mock := &methodPathMock{routes: []routedResponse{
+		{method: http.MethodPost, pathSubstring: "usageReferences", status: http.StatusOK, body: impactUsageXML},
+		{method: http.MethodPost, pathSubstring: "datapreview/freestyle", status: http.StatusOK, body: impactEmptyE071XML},
+		{method: http.MethodDelete, pathSubstring: "/programs/programs/ZTEST", status: http.StatusOK, body: ""},
+	}}
+	client := newImpactWorkflowClient(mock)
+	client.Safety().ImpactGate = ImpactGateAdvise
+
+	result, err := client.DeleteObjectWithResult(context.Background(),
+		"/sap/bc/adt/programs/programs/ZTEST", "SYNTHETIC-HANDLE", "")
+	if err != nil {
+		t.Fatalf("DeleteObjectWithResult() error = %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("delete did not complete: %#v", result)
+	}
+	if result.Object != "/sap/bc/adt/programs/programs/ZTEST" {
+		t.Fatalf("Object = %q, want the deleted object URL", result.Object)
+	}
+
+	if result.Impact == nil {
+		t.Fatal("Impact = nil, want summary when gate is advise")
+	}
+	if !result.Impact.Available {
+		t.Fatalf("Impact.Available = false (%s), want true", result.Impact.Unavailable)
+	}
+	// impactUsageXML holds 4 distinct callers relative to ZTEST (the zcl_demo
+	// row is not the object under delete here, so it counts as a caller).
+	if result.Impact.Callers != 4 {
+		t.Fatalf("Impact.Callers = %d, want 4", result.Impact.Callers)
+	}
+
+	usageIdx := callIndex(mock.calls, isImpactRefsCall)
+	deleteIdx := callIndex(mock.calls, isDeleteCall)
+	if usageIdx < 0 {
+		t.Fatal("no usageReferences request recorded — impact was not computed")
+	}
+	if deleteIdx < 0 {
+		t.Fatal("no DELETE request recorded — delete never reached SAP")
+	}
+	if usageIdx > deleteIdx {
+		t.Fatalf("usageReferences at call %d AFTER delete at call %d — impact must be computed before the mutation", usageIdx, deleteIdx)
+	}
+	if lockIdx := callIndex(mock.calls, isLockCall); lockIdx >= 0 && usageIdx > lockIdx {
+		t.Fatalf("usageReferences at call %d AFTER lock at call %d", usageIdx, lockIdx)
+	}
+	if n := countCalls(mock.calls, isImpactRefsCall); n != 1 {
+		t.Fatalf("usageReferences requests = %d, want exactly 1 per logical delete", n)
+	}
+}
+
+func TestDeleteObjectWithResultSkipsImpactWhenGateOff(t *testing.T) {
+	mock := &methodPathMock{routes: []routedResponse{
+		{method: http.MethodDelete, pathSubstring: "/programs/programs/ZTEST", status: http.StatusOK, body: ""},
+	}}
+	client := newImpactWorkflowClient(mock)
+	// Default safety: ImpactGate is unset (off).
+
+	result, err := client.DeleteObjectWithResult(context.Background(),
+		"/sap/bc/adt/programs/programs/ZTEST", "SYNTHETIC-HANDLE", "")
+	if err != nil {
+		t.Fatalf("DeleteObjectWithResult() error = %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("delete did not complete: %#v", result)
+	}
+	if result.Impact != nil {
+		t.Fatalf("Impact = %+v, want nil with the gate off", result.Impact)
+	}
+	if idx := callIndex(mock.calls, isImpactRefsCall); idx >= 0 {
+		t.Fatalf("usageReferences request at call %d — gate off must compute nothing", idx)
+	}
+	if idx := callIndex(mock.calls, isImpactSQLCall); idx >= 0 {
+		t.Fatalf("E071 RunQuery request at call %d — gate off must compute nothing", idx)
+	}
+}
+
+func TestDeleteObjectWithResultRefusedByPolicySkipsImpact(t *testing.T) {
+	mock := &methodPathMock{} // no routes: any request would 404 and fail the assertions below
+	client := newImpactWorkflowClient(mock)
+	client.Safety().ImpactGate = ImpactGateAdvise
+	client.Safety().ReadOnly = true
+
+	_, err := client.DeleteObjectWithResult(context.Background(),
+		"/sap/bc/adt/programs/programs/ZTEST", "SYNTHETIC-HANDLE", "")
+	if err == nil {
+		t.Fatal("DeleteObjectWithResult() error = nil, want read-only policy refusal")
+	}
+	if !strings.Contains(err.Error(), "blocked by safety configuration") {
+		t.Fatalf("error %q, want safety-configuration refusal", err)
+	}
+	if idx := callIndex(mock.calls, isImpactRefsCall); idx >= 0 {
+		t.Fatalf("usageReferences request at call %d — refused deletes must not compute impact", idx)
+	}
+	if idx := callIndex(mock.calls, isImpactSQLCall); idx >= 0 {
+		t.Fatalf("E071 RunQuery request at call %d — refused deletes must not compute impact", idx)
+	}
+}
+
+// TestRenameObjectComputesImpactWhenAdvised drives a full successful rename
+// under gate "advise" and pins that the result carries the blast radius of the
+// OLD object — renaming a high-caller object breaks every caller of the old
+// name, which is exactly the case this feature exists for. The impact requests
+// must precede every lock in the flow.
+func TestRenameObjectComputesImpactWhenAdvised(t *testing.T) {
+	mock := &methodPathMock{routes: []routedResponse{
+		{method: http.MethodPost, pathSubstring: "usageReferences", status: http.StatusOK, body: impactUsageXML},
+		{method: http.MethodPost, pathSubstring: "datapreview/freestyle", status: http.StatusOK, body: impactEmptyE071XML},
+		{method: http.MethodGet, pathSubstring: "/programs/programs/zold/source/main", status: http.StatusOK, body: "REPORT zold."},
+		{method: http.MethodPost, pathSubstring: "nodestructure", status: http.StatusOK, body: packageNodeStructureXML},
+		{method: http.MethodPost, pathSubstring: "/programs/programs/zold", status: http.StatusOK, body: syntheticLocalLockXML},
+		{method: http.MethodDelete, pathSubstring: "/programs/programs/zold", status: http.StatusOK, body: ""},
+		{method: http.MethodPut, pathSubstring: "/programs/programs/znew/source/main", status: http.StatusOK, body: ""},
+		{method: http.MethodPost, pathSubstring: "/programs/programs/znew", status: http.StatusOK, body: syntheticLocalLockXML},
+		{method: http.MethodPost, pathSubstring: "/activation", status: http.StatusOK, body: ""},
+		// Create posts to the collection URL — must stay below the more
+		// specific /zold and /znew routes (first match wins).
+		{method: http.MethodPost, pathSubstring: "/programs/programs", status: http.StatusCreated, body: ""},
+	}}
+	client := newImpactWorkflowClient(mock)
+	client.Safety().ImpactGate = ImpactGateAdvise
+
+	result, err := client.RenameObject(context.Background(), ObjectTypeProgram, "ZOLD", "ZNEW", "$TMP", "")
+	if err != nil {
+		t.Fatalf("RenameObject() error = %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("rename did not complete: %#v", result)
+	}
+
+	if result.Impact == nil {
+		t.Fatal("Impact = nil, want summary when gate is advise")
+	}
+	if !result.Impact.Available {
+		t.Fatalf("Impact.Available = false (%s), want true", result.Impact.Unavailable)
+	}
+	// All 4 distinct impactUsageXML callers reference the OLD object.
+	if result.Impact.Callers != 4 {
+		t.Fatalf("Impact.Callers = %d, want 4", result.Impact.Callers)
+	}
+
+	usageIdx := callIndex(mock.calls, isImpactRefsCall)
+	lockIdx := callIndex(mock.calls, isLockCall)
+	if usageIdx < 0 {
+		t.Fatal("no usageReferences request recorded — impact was not computed")
+	}
+	if lockIdx < 0 {
+		t.Fatal("no LOCK request recorded — rename never reached the lock step")
+	}
+	if usageIdx > lockIdx {
+		t.Fatalf("usageReferences at call %d AFTER first lock at call %d — impact must be computed before any lock", usageIdx, lockIdx)
+	}
+	if sqlIdx := callIndex(mock.calls, isImpactSQLCall); sqlIdx >= 0 && sqlIdx > lockIdx {
+		t.Fatalf("E071 lookup at call %d AFTER first lock at call %d", sqlIdx, lockIdx)
+	}
+	if n := countCalls(mock.calls, isImpactRefsCall); n != 1 {
+		t.Fatalf("usageReferences requests = %d, want exactly 1 per logical rename", n)
+	}
+}
+
 // TestImpactGateActiveIsAnAllowlist pins the reviewer requirement that the
 // gate check is an allowlist of the two active modes — NOT `!= off` — so a
 // garbage config value stays inert instead of enabling network calls.

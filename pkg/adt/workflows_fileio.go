@@ -12,12 +12,13 @@ import (
 
 // RenameObjectResult contains the result of renaming an object.
 type RenameObjectResult struct {
-	OldName    string   `json:"oldName"`
-	NewName    string   `json:"newName"`
-	ObjectType string   `json:"objectType"`
-	Success    bool     `json:"success"`
-	Message    string   `json:"message,omitempty"`
-	Errors     []string `json:"errors,omitempty"`
+	OldName    string         `json:"oldName"`
+	NewName    string         `json:"newName"`
+	ObjectType string         `json:"objectType"`
+	Success    bool           `json:"success"`
+	Message    string         `json:"message,omitempty"`
+	Errors     []string       `json:"errors,omitempty"`
+	Impact     *ImpactSummary `json:"impact,omitempty"`
 }
 
 // RenameObject renames an ABAP object by creating a copy with the new name and deleting the old one.
@@ -35,6 +36,18 @@ func (c *Client) RenameObject(ctx context.Context, objType CreatableObjectType, 
 	oldURL, err := c.buildObjectURL(objType, oldName)
 	if err != nil {
 		return nil, err
+	}
+
+	// Advisory blast radius, computed on the OLD object: every caller of the
+	// old name breaks when it is deleted, so the old object's callers ARE the
+	// rename's impact. Computed before any policy gate or lock. Skipped when
+	// the local op-type policy would refuse the rename anyway (e.g. read-only
+	// mode): checkSafety is local and idempotent, and the checkMutation below
+	// re-runs the same OpDelete/"RenameObject" check to produce the refusal
+	// error.
+	if impactGateActive(&c.config.Safety) && c.checkSafety(OpDelete, "RenameObject") == nil {
+		result.Impact = c.computeURLWriteImpact(ctx, oldURL)
+		ctx = withImpactComputed(ctx, result.Impact)
 	}
 
 	// Unified mutation policy gate for the old object being deleted.

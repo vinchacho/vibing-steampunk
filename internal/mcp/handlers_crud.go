@@ -522,12 +522,21 @@ func (s *Server) handleDeleteObject(ctx context.Context, request mcp.CallToolReq
 		transport = t
 	}
 
-	err := s.adtClient.DeleteObject(ctx, objectURL, lockHandle, transport)
+	deleteResult, err := s.adtClient.DeleteObjectWithResult(ctx, objectURL, lockHandle, transport)
 	if err != nil {
 		return newToolResultError(fmt.Sprintf("Failed to delete object: %v", err)), nil
 	}
 
-	return mcp.NewToolResultText("Object deleted successfully"), nil
+	payload := map[string]any{
+		"success": deleteResult.Success,
+		"object":  deleteResult.Object,
+		"message": "Object deleted successfully",
+	}
+	if deleteResult.Impact != nil {
+		payload["impact"] = deleteResult.Impact
+	}
+	output, _ := json.MarshalIndent(payload, "", "  ")
+	return mcp.NewToolResultText(string(output)), nil
 }
 
 func (s *Server) handleMoveObject(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {

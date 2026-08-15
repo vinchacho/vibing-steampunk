@@ -924,6 +924,43 @@ func (c *Client) DeleteObject(ctx context.Context, objectURL string, lockHandle 
 	return nil
 }
 
+// DeleteResult is the structured outcome of a delete, carrying the advisory
+// blast-radius summary when the impact gate is active.
+type DeleteResult struct {
+	Success bool           `json:"success"`
+	Object  string         `json:"object"`
+	Impact  *ImpactSummary `json:"impact,omitempty"`
+}
+
+// DeleteObjectWithResult deletes an existing object like DeleteObject, but
+// returns a structured result that carries the advisory ImpactSummary when
+// the impact gate is active. DeleteObject keeps its plain-error signature for
+// the internal cleanup paths (reconcileFailedCreate, RenameObject step 6,
+// workflow rollbacks) where a blast radius is meaningless — those delete
+// zombie or just-replaced objects; this wrapper is the user-facing entry
+// (the MCP DeleteObject tool).
+//
+// The impact is computed before delegating to DeleteObject, so the
+// usageReferences lookup precedes the DELETE. The caller's lock was acquired
+// in an earlier, separate call — the mutation gate's own package resolution
+// already runs stateless requests at this same point, so this adds no new
+// session hazard. Skipped when the local op-type policy would refuse the
+// delete anyway (e.g. read-only mode): checkSafety is local and idempotent,
+// and DeleteObject's checkMutation re-runs the same OpDelete/"DeleteObject"
+// check to produce the refusal error.
+func (c *Client) DeleteObjectWithResult(ctx context.Context, objectURL string, lockHandle string, transport string) (*DeleteResult, error) {
+	result := &DeleteResult{Object: objectURL}
+	if impactGateActive(&c.config.Safety) && c.checkSafety(OpDelete, "DeleteObject") == nil {
+		result.Impact = c.computeURLWriteImpact(ctx, objectURL)
+		ctx = withImpactComputed(ctx, result.Impact)
+	}
+	if err := c.DeleteObject(ctx, objectURL, lockHandle, transport); err != nil {
+		return nil, err
+	}
+	result.Success = true
+	return result, nil
+}
+
 // --- Helper to get object URLs ---
 
 // GetObjectURL returns the ADT URL for an object based on its type and name.
