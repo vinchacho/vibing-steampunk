@@ -28,6 +28,10 @@ type Client struct {
 	// Lock handles are session-bound and may carry the transport selected by
 	// SAP in the LOCK response. sync.Map keeps concurrent workflows isolated.
 	lockTransports sync.Map // map[lockHandle]corrNr
+
+	// Impact-gate confirmation tokens (see impact_confirm.go). Process
+	// lifetime only — a restart invalidates them, like lockTransports.
+	impactTokens impactTokenStore
 }
 
 // NewClient creates a new ADT client with the given configuration.
