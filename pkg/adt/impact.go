@@ -102,7 +102,11 @@ func (e *ImpactBlockedError) Error() string {
 		}
 		if len(s.RecentTransports) > 0 {
 			t := s.RecentTransports[0]
-			fmt.Fprintf(&b, "; transport %s touched this object", t.Transport)
+			b.WriteString("; ")
+			if word := transportStatusWord(t.Status); word != "" {
+				b.WriteString(word + " ")
+			}
+			fmt.Fprintf(&b, "transport %s touched this object", t.Transport)
 			if t.Date != "" {
 				b.WriteString(" on " + t.Date)
 			}
@@ -112,6 +116,22 @@ func (e *ImpactBlockedError) Error() string {
 	fmt.Fprintf(&b, "To proceed, retry the same call with: confirm: %q\n", e.Token)
 	b.WriteString("Token expires in 10 minutes and is valid only for this object and operation.")
 	return b.String()
+}
+
+// transportStatusWord renders an E070 TRSTATUS value as the word used in the
+// refusal's transport line (design §Confirmation flow: "released transport
+// TR-EXAMPLE touched this object on 2026-08-03"). R is released; D and L are
+// the two modifiable statuses ("open"); anything else passes through
+// verbatim so an unexpected status is visible rather than mislabeled.
+func transportStatusWord(status string) string {
+	switch status {
+	case "R":
+		return "released"
+	case "D", "L":
+		return "open"
+	default:
+		return status
+	}
 }
 
 // impactOpVerb renders an OperationType as the verb used in the block-mode

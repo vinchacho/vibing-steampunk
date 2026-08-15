@@ -139,6 +139,31 @@ func (c *Client) effectiveLockTransport(lockHandle, requested string) string {
 // transport is optional (for transportable objects)
 func (c *Client) UpdateSource(ctx context.Context, objectSourceURL string, source string, lockHandle string, transport string) error {
 	transport = c.effectiveLockTransport(lockHandle, transport)
+
+	// Primitive-level block enforcement (Task 8b). The outer write workflows
+	// (WriteSource, EditSource, RenameObject, DeleteObjectWithResult) stash an
+	// impact marker in ctx before their own gates, but UpdateSource is also
+	// reachable without one — the expert UpdateSource tool, the hyperfocused
+	// UPDATE_SOURCE route, DeployZip phase 2, Create/Update/DeployFromFile,
+	// dsl.Import, and WriteProgram/WriteClass all funnel here directly. In
+	// block mode, compute the blast radius at the primitive when nothing
+	// upstream did, so checkImpactGate below evaluates normally: a block
+	// propagates an *ImpactBlockedError through every wrapper, and a retry
+	// carrying WithImpactConfirm consumes the token at this same gate.
+	//
+	// Deliberately BLOCK MODE ONLY — advise mode does NOT compute here. The
+	// asymmetry: an advisory summary needs a result struct to attach to, and
+	// this primitive returns only an error, so advisory coverage stays at the
+	// four workflow sites that own result structs. The checkSafety pre-guard
+	// preserves the no-impact-traffic-on-refused-writes invariant (it is
+	// local and idempotent; checkMutation below re-runs the same
+	// OpUpdate/"UpdateSource" check to produce the refusal error).
+	if c.config.Safety.ImpactGate == ImpactGateBlock &&
+		impactMarkerFromContext(ctx) == nil &&
+		c.checkSafety(OpUpdate, "UpdateSource") == nil {
+		ctx = withImpactComputed(ctx, c.computeURLWriteImpact(ctx, objectSourceURL), OpUpdate, objectSourceURL)
+	}
+
 	// Unified mutation policy gate (op type + package + transport)
 	if err := c.checkMutation(ctx, MutationContext{
 		Op:        OpUpdate,
@@ -893,6 +918,16 @@ func escapeXML(s string) string {
 // objectURL is the ADT URL of the object (e.g., "/sap/bc/adt/programs/programs/ZTEST")
 // lockHandle is required (from LockObject)
 // transport is optional (for transportable objects)
+//
+// Deliberately NOT impact-gated at the primitive (unlike UpdateSource, which
+// stashes its own marker in block mode). DeleteObject's markerless callers
+// are error-recovery/cleanup paths — reconcileFailedCreate, ExecuteABAP's
+// temp-object rollback, and RenameObject step 6 — that delete zombie or
+// just-replaced objects. A block there (e.g. risk "unknown" under threshold
+// "medium" while the where-used service is down) would strand those zombies
+// with no caller positioned to surface the refusal or retry with a token.
+// The user-facing delete entry is DeleteObjectWithResult, which computes and
+// stashes the impact marker so checkImpactGate applies normally.
 func (c *Client) DeleteObject(ctx context.Context, objectURL string, lockHandle string, transport string) error {
 	transport = c.effectiveLockTransport(lockHandle, transport)
 	// Unified mutation policy gate (op type + package + transport)

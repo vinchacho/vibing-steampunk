@@ -22,6 +22,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -324,5 +326,350 @@ func TestRenameUnderBlockSingleConfirmSuffices(t *testing.T) {
 	}
 	if idx := callIndex(mock.calls, isPutCall); idx < 0 {
 		t.Fatal("no PUT recorded — new object source was never written")
+	}
+}
+
+// --- Task 8b: primitive-level block enforcement in Client.UpdateSource ---
+//
+// checkImpactGate only ever gates when an outer workflow stashed an impact
+// marker in ctx. Before Task 8b only four sites stashed (WriteSource,
+// EditSource, RenameObject, DeleteObjectWithResult) — every other route into
+// Client.UpdateSource (the expert UpdateSource tool, the hyperfocused
+// UPDATE_SOURCE route, DeployZip phase 2, Create/Update/DeployFromFile,
+// dsl.Import, WriteProgram/WriteClass) bypassed block mode entirely. The
+// tests below pin the fix: in BLOCK mode, UpdateSource itself computes and
+// stashes the blast radius when nothing upstream did, so the gate applies at
+// the primitive and every wrapper inherits it. Advise mode deliberately does
+// NOT compute at the primitive (no result struct to attach a summary to) —
+// that asymmetry is pinned too.
+
+// (8b-a) Raw UpdateSource on a high-risk object under gate "block": refused
+// with *ImpactBlockedError before any PUT; retrying the same call with the
+// issued token succeeds.
+func TestRawUpdateSourceBlockedAtHighRiskAndConfirmRetry(t *testing.T) {
+	mock := &methodPathMock{routes: []routedResponse{
+		{method: http.MethodPost, pathSubstring: "usageReferences", status: http.StatusOK, body: highImpactUsageXML(30)},
+		{method: http.MethodPost, pathSubstring: "datapreview/freestyle", status: http.StatusOK, body: impactEmptyE071XML},
+		{method: http.MethodPut, pathSubstring: "/source/main", status: http.StatusOK, body: ""},
+	}}
+	client := newImpactWorkflowClient(mock)
+	client.Safety().ImpactGate = ImpactGateBlock
+	client.Safety().ImpactThreshold = ImpactThresholdHigh
+
+	err := client.UpdateSource(context.Background(),
+		"/sap/bc/adt/programs/programs/ZTEST/source/main", "REPORT ztest.", "SYNTHETIC-HANDLE", "")
+	if err == nil {
+		t.Fatal("UpdateSource() error = nil, want impact block")
+	}
+	var blocked *ImpactBlockedError
+	if !errors.As(err, &blocked) {
+		t.Fatalf("errors.As(*ImpactBlockedError) = false for %T: %v", err, err)
+	}
+	if !impactTokenPattern.MatchString(blocked.Token) {
+		t.Fatalf("Token %q does not match %s", blocked.Token, impactTokenPattern)
+	}
+	if blocked.Summary == nil || blocked.Summary.Risk != riskHigh {
+		t.Fatalf("Summary = %+v, want risk %q", blocked.Summary, riskHigh)
+	}
+	if idx := callIndex(mock.calls, isPutCall); idx >= 0 {
+		t.Fatalf("PUT request at call %d — blocked raw UpdateSource must never reach the PUT", idx)
+	}
+
+	// Confirmed retry: same call, token in ctx → PUT goes through.
+	err = client.UpdateSource(WithImpactConfirm(context.Background(), blocked.Token),
+		"/sap/bc/adt/programs/programs/ZTEST/source/main", "REPORT ztest.", "SYNTHETIC-HANDLE", "")
+	if err != nil {
+		t.Fatalf("confirmed UpdateSource() error = %v, want success", err)
+	}
+	if idx := callIndex(mock.calls, isPutCall); idx < 0 {
+		t.Fatal("no PUT recorded — confirmed raw UpdateSource never reached SAP")
+	}
+}
+
+// (8b-b) The asymmetry: advise mode must NOT compute impact at the
+// primitive — no result struct exists to attach a summary to, so advisory
+// coverage stays at the four workflow sites. A raw UpdateSource under
+// gate "advise" issues NO impact requests and writes straight through.
+func TestRawUpdateSourceAdviseModeComputesNothing(t *testing.T) {
+	mock := &methodPathMock{routes: []routedResponse{
+		{method: http.MethodPut, pathSubstring: "/source/main", status: http.StatusOK, body: ""},
+	}}
+	client := newImpactWorkflowClient(mock)
+	client.Safety().ImpactGate = ImpactGateAdvise
+	client.Safety().ImpactThreshold = ImpactThresholdMedium
+
+	err := client.UpdateSource(context.Background(),
+		"/sap/bc/adt/programs/programs/ZTEST/source/main", "REPORT ztest.", "SYNTHETIC-HANDLE", "")
+	if err != nil {
+		t.Fatalf("UpdateSource() error = %v, want advise mode to pass through the primitive", err)
+	}
+	if idx := callIndex(mock.calls, isImpactRefsCall); idx >= 0 {
+		t.Fatalf("usageReferences request at call %d — advise mode must not compute impact at the primitive", idx)
+	}
+	if idx := callIndex(mock.calls, isImpactSQLCall); idx >= 0 {
+		t.Fatalf("E071 RunQuery request at call %d — advise mode must not compute impact at the primitive", idx)
+	}
+	if idx := callIndex(mock.calls, isPutCall); idx < 0 {
+		t.Fatal("no PUT recorded — write never reached SAP")
+	}
+}
+
+// (8b-b2) The no-impact-traffic-on-refused-writes invariant holds at the
+// primitive too: when the local op-type policy refuses the write anyway
+// (read-only mode), block mode must not spend network calls computing a
+// blast radius.
+func TestRawUpdateSourceRefusedByPolicySkipsImpact(t *testing.T) {
+	mock := &methodPathMock{} // no routes: any request would 404 and fail below
+	client := newImpactWorkflowClient(mock)
+	client.Safety().ImpactGate = ImpactGateBlock
+	client.Safety().ImpactThreshold = ImpactThresholdHigh
+	client.Safety().ReadOnly = true
+
+	err := client.UpdateSource(context.Background(),
+		"/sap/bc/adt/programs/programs/ZTEST/source/main", "REPORT ztest.", "SYNTHETIC-HANDLE", "")
+	if err == nil {
+		t.Fatal("UpdateSource() error = nil, want read-only policy refusal")
+	}
+	if !strings.Contains(err.Error(), "blocked by safety configuration") {
+		t.Fatalf("error %q, want safety-configuration refusal", err)
+	}
+	if idx := callIndex(mock.calls, isImpactRefsCall); idx >= 0 {
+		t.Fatalf("usageReferences request at call %d — refused writes must not compute impact", idx)
+	}
+}
+
+// (8b-c) UpdateFromFile (and via it DeployFromFile's update branch) funnels
+// into UpdateSource without stashing a marker — the primitive-level gate
+// must block it. The wrapper converts write errors into a failed
+// DeployResult, so the refusal (with its token) surfaces in Errors.
+func TestUpdateFromFileUnderBlockInheritsPrimitiveGate(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "ztest.prog.abap")
+	if err := os.WriteFile(file, []byte("REPORT ztest."), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	mock := &methodPathMock{routes: []routedResponse{
+		{method: http.MethodPost, pathSubstring: "/checkruns", status: http.StatusOK, body: impactCleanSyntaxXML},
+		{method: http.MethodPost, pathSubstring: "usageReferences", status: http.StatusOK, body: highImpactUsageXML(30)},
+		{method: http.MethodPost, pathSubstring: "datapreview/freestyle", status: http.StatusOK, body: impactEmptyE071XML},
+		// The file-derived object URL keeps the file's lowercase name.
+		{method: http.MethodPost, pathSubstring: "/programs/programs/ztest", status: http.StatusOK, body: syntheticLocalLockXML},
+		{method: http.MethodPut, pathSubstring: "/source/main", status: http.StatusOK, body: ""},
+	}}
+	client := newImpactWorkflowClient(mock)
+	client.Safety().ImpactGate = ImpactGateBlock
+	client.Safety().ImpactThreshold = ImpactThresholdHigh
+
+	result, err := client.UpdateFromFile(context.Background(), file, "")
+	if err != nil {
+		t.Fatalf("UpdateFromFile() error = %v (wrapper reports write failures in the result)", err)
+	}
+	if result.Success {
+		t.Fatalf("result.Success = true, want blocked: %#v", result)
+	}
+	joined := strings.Join(result.Errors, "\n")
+	if !strings.Contains(joined, "IMPACT GATE") {
+		t.Fatalf("result.Errors %q must carry the IMPACT GATE refusal", joined)
+	}
+	if !strings.Contains(joined, "impact-confirm-") {
+		t.Fatalf("result.Errors %q must carry the confirmation token", joined)
+	}
+	if idx := callIndex(mock.calls, isPutCall); idx >= 0 {
+		t.Fatalf("PUT request at call %d — blocked UpdateFromFile must never reach the PUT", idx)
+	}
+}
+
+// (8b-d) WriteProgram funnels into UpdateSource without stashing a marker —
+// the primitive-level gate must block it. WriteProgram reports write
+// failures in result.Message with a nil error.
+func TestWriteProgramUnderBlockInheritsPrimitiveGate(t *testing.T) {
+	mock := &methodPathMock{routes: []routedResponse{
+		{method: http.MethodPost, pathSubstring: "/checkruns", status: http.StatusOK, body: impactCleanSyntaxXML},
+		{method: http.MethodPost, pathSubstring: "usageReferences", status: http.StatusOK, body: highImpactUsageXML(30)},
+		{method: http.MethodPost, pathSubstring: "datapreview/freestyle", status: http.StatusOK, body: impactEmptyE071XML},
+		{method: http.MethodPost, pathSubstring: "/programs/programs/ZTEST", status: http.StatusOK, body: syntheticLocalLockXML},
+		{method: http.MethodPut, pathSubstring: "/source/main", status: http.StatusOK, body: ""},
+	}}
+	client := newImpactWorkflowClient(mock)
+	client.Safety().ImpactGate = ImpactGateBlock
+	client.Safety().ImpactThreshold = ImpactThresholdHigh
+
+	result, err := client.WriteProgram(context.Background(), "ZTEST", "REPORT ztest.", "")
+	if err != nil {
+		t.Fatalf("WriteProgram() error = %v (wrapper reports write failures in the result)", err)
+	}
+	if result.Success {
+		t.Fatalf("result.Success = true, want blocked: %#v", result)
+	}
+	if !strings.Contains(result.Message, "IMPACT GATE") {
+		t.Fatalf("result.Message %q must carry the IMPACT GATE refusal", result.Message)
+	}
+	if !strings.Contains(result.Message, "impact-confirm-") {
+		t.Fatalf("result.Message %q must carry the confirmation token", result.Message)
+	}
+	if idx := callIndex(mock.calls, isPutCall); idx >= 0 {
+		t.Fatalf("PUT request at call %d — blocked WriteProgram must never reach the PUT", idx)
+	}
+}
+
+// --- Medium-tier gating (conformance fix 2) ---
+//
+// highImpactUsageXML(10) yields 10 callers and no transport touches:
+// risk "medium" (>= 5 callers, < 25, untouched).
+
+// Threshold "medium" gates risk "medium".
+func TestWriteSourceMediumRiskBlockedAtThresholdMedium(t *testing.T) {
+	mock := &methodPathMock{routes: writeSourceBlockMockRoutes(http.StatusOK, highImpactUsageXML(10))}
+	client := newImpactWorkflowClient(mock)
+	client.Safety().ImpactGate = ImpactGateBlock
+	client.Safety().ImpactThreshold = ImpactThresholdMedium
+
+	blocked := blockedWriteSource(context.Background(), t, client)
+	if blocked.Summary == nil || blocked.Summary.Risk != riskMedium {
+		t.Fatalf("Summary = %+v, want risk %q", blocked.Summary, riskMedium)
+	}
+	if !impactTokenPattern.MatchString(blocked.Token) {
+		t.Fatalf("Token %q does not match %s", blocked.Token, impactTokenPattern)
+	}
+	if idx := callIndex(mock.calls, isPutCall); idx >= 0 {
+		t.Fatalf("PUT request at call %d — blocked writes must never reach the PUT", idx)
+	}
+}
+
+// Threshold "high" (the default) lets risk "medium" pass.
+func TestWriteSourceMediumRiskPassesAtThresholdHigh(t *testing.T) {
+	mock := &methodPathMock{routes: writeSourceBlockMockRoutes(http.StatusOK, highImpactUsageXML(10))}
+	client := newImpactWorkflowClient(mock)
+	client.Safety().ImpactGate = ImpactGateBlock
+	client.Safety().ImpactThreshold = ImpactThresholdHigh
+
+	result, err := client.WriteSource(context.Background(), "PROG", "ZTEST", "REPORT ztest.", &WriteSourceOptions{
+		Mode: WriteModeUpdate,
+	})
+	if err != nil {
+		t.Fatalf("WriteSource() error = %v, want medium risk to pass at threshold high", err)
+	}
+	if !result.Success {
+		t.Fatalf("write did not complete: %#v", result)
+	}
+	if result.Impact == nil || result.Impact.Risk != riskMedium {
+		t.Fatalf("Impact = %+v, want attached summary with risk %q", result.Impact, riskMedium)
+	}
+	if idx := callIndex(mock.calls, isPutCall); idx < 0 {
+		t.Fatal("no PUT recorded — write never reached SAP")
+	}
+}
+
+// --- EditSource confirm-retry (conformance fix 3) ---
+//
+// Mirrors TestWriteSourceConfirmRetryAndSingleUse for the EditSource path:
+// blocked once with a token; a single confirmed retry completes end-to-end
+// THROUGH the inner UpdateSource (which origin-matches the marker and honors
+// marker.confirmed instead of demanding a second, un-issuable token); the
+// consumed token re-blocks with a fresh one.
+func TestEditSourceUnderBlockConfirmRetry(t *testing.T) {
+	mock := &methodPathMock{routes: []routedResponse{
+		{method: http.MethodPost, pathSubstring: "usageReferences", status: http.StatusOK, body: highImpactUsageXML(30)},
+		{method: http.MethodPost, pathSubstring: "datapreview/freestyle", status: http.StatusOK, body: impactEmptyE071XML},
+		{method: http.MethodGet, pathSubstring: "/source/main", status: http.StatusOK, body: "REPORT ztest.\nWRITE 'Hello'."},
+		{method: http.MethodPost, pathSubstring: "/checkruns", status: http.StatusOK, body: impactCleanSyntaxXML},
+		{method: http.MethodPost, pathSubstring: "/programs/programs/ZTEST", status: http.StatusOK, body: syntheticLocalLockXML},
+		{method: http.MethodPut, pathSubstring: "/source/main", status: http.StatusOK, body: ""},
+		{method: http.MethodPost, pathSubstring: "/activation", status: http.StatusOK, body: ""},
+	}}
+	client := newImpactWorkflowClient(mock)
+	client.Safety().ImpactGate = ImpactGateBlock
+	client.Safety().ImpactThreshold = ImpactThresholdHigh
+
+	// First call: blocked at EditSource's own gate, before lock and PUT.
+	_, err := client.EditSource(context.Background(),
+		"/sap/bc/adt/programs/programs/ZTEST", "'Hello'", "'World'", false, true, false)
+	if err == nil {
+		t.Fatal("EditSource() error = nil, want impact block")
+	}
+	var blocked *ImpactBlockedError
+	if !errors.As(err, &blocked) {
+		t.Fatalf("errors.As(*ImpactBlockedError) = false for %T: %v", err, err)
+	}
+	if !impactTokenPattern.MatchString(blocked.Token) {
+		t.Fatalf("Token %q does not match %s", blocked.Token, impactTokenPattern)
+	}
+	if idx := callIndex(mock.calls, isLockCall); idx >= 0 {
+		t.Fatalf("LOCK request at call %d — blocked edits must stop before the lock", idx)
+	}
+	if idx := callIndex(mock.calls, isPutCall); idx >= 0 {
+		t.Fatalf("PUT request at call %d — blocked edits must never reach the PUT", idx)
+	}
+
+	// Confirmed retry: the single token authorizes the whole edit, including
+	// the inner UpdateSource whose gate origin-matches the marker.
+	result, err := client.EditSource(WithImpactConfirm(context.Background(), blocked.Token),
+		"/sap/bc/adt/programs/programs/ZTEST", "'Hello'", "'World'", false, true, false)
+	if err != nil {
+		t.Fatalf("confirmed EditSource() error = %v, want success", err)
+	}
+	if !result.Success {
+		t.Fatalf("confirmed edit did not complete: %#v", result)
+	}
+	if result.Impact == nil || result.Impact.Risk != riskHigh {
+		t.Fatalf("Impact = %+v, want attached summary with risk %q", result.Impact, riskHigh)
+	}
+	if n := countCalls(mock.calls, isPutCall); n != 1 {
+		t.Fatalf("PUT requests = %d, want exactly 1 (single confirmed write)", n)
+	}
+
+	// Third call reusing the consumed token: blocked again, NEW token.
+	_, err = client.EditSource(WithImpactConfirm(context.Background(), blocked.Token),
+		"/sap/bc/adt/programs/programs/ZTEST", "'Hello'", "'World'", false, true, false)
+	var reblocked *ImpactBlockedError
+	if !errors.As(err, &reblocked) {
+		t.Fatalf("errors.As(*ImpactBlockedError) = false for %T: %v", err, err)
+	}
+	if reblocked.Token == blocked.Token {
+		t.Fatal("reissued token equals the consumed one — tokens must be single-use and fresh per block")
+	}
+}
+
+// --- Transport status word in the refusal text (conformance fix 1) ---
+//
+// Design §Confirmation flow renders the transport line with the status word:
+// "released transport TR-EXAMPLE touched this object on 2026-08-03".
+// TRSTATUS R → "released"; D and L (the two modifiable statuses) → "open";
+// anything else passes through verbatim; empty renders no word.
+func TestImpactBlockedErrorRendersTransportStatusWord(t *testing.T) {
+	tests := []struct {
+		status string
+		want   string
+	}{
+		{"R", "released transport TR-EXAMPLE touched this object on 2026-08-03"},
+		{"D", "open transport TR-EXAMPLE touched this object on 2026-08-03"},
+		{"L", "open transport TR-EXAMPLE touched this object on 2026-08-03"},
+		{"N", "N transport TR-EXAMPLE touched this object on 2026-08-03"},
+		{"", "transport TR-EXAMPLE touched this object on 2026-08-03"},
+	}
+	for _, tt := range tests {
+		e := &ImpactBlockedError{
+			Summary: &ImpactSummary{
+				Object:    "ZCL_DEMO",
+				Available: true,
+				Risk:      riskHigh,
+				Callers:   47,
+				Packages:  []string{"Z_PKG_A", "Z_PKG_B"},
+				RecentTransports: []TransportTouch{
+					{Transport: "TR-EXAMPLE", Status: tt.status, Date: "2026-08-03"},
+				},
+			},
+			Token:  "impact-confirm-00000000000000000000000000000000",
+			Object: "ZCL_DEMO",
+			Op:     "update",
+		}
+		msg := e.Error()
+		if !strings.Contains(msg, tt.want) {
+			t.Fatalf("status %q: Error() = %q, want transport line %q", tt.status, msg, tt.want)
+		}
+		if strings.Contains(msg, "  ") {
+			t.Fatalf("status %q: Error() = %q contains a double space", tt.status, msg)
+		}
 	}
 }

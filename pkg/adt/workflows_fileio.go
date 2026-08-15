@@ -158,6 +158,13 @@ func (c *Client) RenameObject(ctx context.Context, objType CreatableObjectType, 
 		return result, nil
 	}
 
+	// Latent hazard: this MUST stay the raw DeleteObject, never
+	// DeleteObjectWithResult. The wrapper would recompute the blast radius
+	// and restash a fresh UNCONFIRMED marker over the origin marker whose
+	// confirmation — consumed at this rename's first (OpDelete, oldURL)
+	// gate — is exactly what authorizes this step-6 delete. The restashed
+	// marker shares that origin identity, so the gate would re-block here
+	// un-confirmably, stranding the rename after the new object exists.
 	err = c.DeleteObject(ctx, oldURL, oldLockResult.LockHandle, transport)
 	if err != nil {
 		result.Message = fmt.Sprintf("New object %s created successfully, but failed to delete old object %s: %v. Please delete manually.", newName, oldName, err)
