@@ -36,6 +36,33 @@
 8. **`program-to-spec`** (superclaude) — reverse-engineer an object/package into an FS/TS document with Socratic scope narrowing; pairs with `handoff` and, longer-term, with the abap_wiki-style author/judge doc generation from report 001.
 9. **`anst-enhancement-discovery`** (ABAP FS, unique) — guide the user through tcode ANST runtime tracing → export xlsx → classify rows USER_EXIT/DEFINITE/POTENTIAL/STANDARD (~20 lines of Go) → read each object's source → feed findings into test/RCA. Nobody in the Claude ecosystem has runtime enhancement discovery.
 
+## 2a. Content-verified decision table (deep dive, 2026-08-15 evening)
+
+All four model repos were subsequently fetched **verbatim** (saved under the session scratchpad `skilldives/`) and read skill-by-skill; matt1as was already adapted (its 5 skills shipped). Verdicts below are content-verified, not catalog-level:
+
+**Adapt now (sources in hand):**
+| Skill/asset | Source (license) | Why, verified |
+|---|---|---|
+| `transport-review` + `transport-overview` pair | arc-1 (MIT) | The CTS-normalization section (never pass LIMU/METH/PROG-I identities to reads), snapshot-sparsity doctrine ("baseline unavailable", never guess), diff-side selection table, and depth/breadth pairing are the hardest-won content in the ecosystem; vsp's `changelog` gives true per-object history arc-1 documents as impossible over plain ADT |
+| `debug-slow-sql` ladder | arc-1 (MIT) | Cheapest-first rung ladder with "stop at the rung that explains it", generator-hunting, verdict-driven routing; every rung has a vsp primitive |
+| `sap-unused-code` | arc-1 (MIT) | SCMON/SUSG runtime evidence + static where-used; fuses with vsp Slim V2 into a stronger combined verdict; refuses unbounded scans (>500 candidates) |
+| `generate-abap-unit-test` | arc-1 (MIT) | Complements our run-only `test` skill with authoring: dependency-classification table, test-data rules, templates |
+| `sap-object-documenter` | arc-1 (MIT) | vsp's abaplint port + graph health/api-surface exceed arc-1's inputs |
+| `abap-snippet` | jfilak (Apache-2.0; plugin repo has no LICENSE file — defers to sapcli's) | **Build as a Go MCP tool, not a skill**: the value is the CLI-side atomicity (create→check→activate→execute→finally-delete); skill stays a usage note |
+| `atc-cloudification` knowledge | likweitan (MIT) | The check-variant/JSON-URL/Note-number reference data our new clean-core-check lacks; feed into it |
+| `abap-unit-testing` references | likweitan (MIT) | 15-method CL_ABAP_UNIT_ASSERT table + four test-environment templates (CDS/OSQL/RAP txbufdbl/mockemlapi) as references/ for test authoring |
+| `validate_skills.py` + CI | likweitan (MIT) | 83-line stdlib skill-linter (frontmatter, name=folder, dead links); point at plugin/skills/, add to ci.yml |
+| `program-to-spec` | superclaude (MIT) | Depth ladder L1–L4 with per-level contracts, single bundled question opener, numeric ambiguity gate (≤3 exits interview) |
+| `package-to-process` | superclaude (MIT) | **Best graph-engine fit found anywhere**: module document-flow dictionary (anchor tables + canonical flow labels per module) + Jaccard clustering — sc4sap reconstructs via N MCP calls what pkg/graph computes natively |
+| `analyze-symptom` framework → merge into `rca` | superclaude (MIT) | 8-category root-cause table every hypothesis must map to; evidence matrix tool-answerable vs tool-unreachable; "BLOCKED, not probably" rule |
+| `sap-doctor` layering → merge into `status` | superclaude (MIT) | Ordered layer gating with printed SKIP rationale; auth-probe selection naming the missing auth object |
+
+**Adapt later (verified, sequenced):** arc-1 `sap-clean-core-atc` (needs the abap-atc-cr-cv-s4hc dataset — fetch its JSON directly), `migrate-custom-code`, `generate-cds-unit-test` + analytics chain (after RAP skills settle), `explain-abap-code` (splice BDEF-walk + FUGR include-tree into existing skills), `setup-abap-mirror`; likweitan `abap-cloud`+`abap-cloud-migration` (merge into one clean-core-migration skill), `abap-sql-amdp`, `badi-enhancement` (incl. the CL_BADI debugger-discovery trick), `authorization-iam`, `released-abap-classes` (routing-skill pattern, don't vendor 9.8k lines); superclaude `compare-programs`, consultant-agent data files, `deep-interview` gate (a paragraph in abap-developer).
+
+**Skip (verified reasons):** likweitan abap/clean-abap/rap* (matt1as covers), btp-* (off-scope), fiori-url; arc-1 UI5/SEGW/RAP-generation skills (matt1as + sap-fiori-tools territory), analyze-chat-session; superclaude consultant agents as agents (data files are the asset, not the personas).
+
+**Cross-cutting authoring patterns to adopt in ALL vsp skills** (from arc-1 chiefly): Smart-Defaults tables ("apply silently, do NOT ask"), hard scope caps with refusal text, Error-Handling tables with expected-failure rows, When-to-use/NOT sections + mutually-exclusive pair tables, epistemic-honesty rules ("0 findings on $TMP = not checked, not clean"), literal fenced output templates, token-cheap-first ladders, Follow-up Options chaining, data-hygiene allowlists (never read RFCDES.RFCOPTIONS), the two independent Clean-Core A–D axes (Notes 3578329 vs 3690029 — never merge them); from superclaude: the 200-line SKILL.md cap with Companion_Files tables, BLOCKED-escalation contract, phase-banner observability.
+
 ## 3. Cross-cutting patterns to adopt
 
 ### 3.1 Environment profile instead of branches
