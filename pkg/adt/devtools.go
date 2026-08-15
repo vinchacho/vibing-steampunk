@@ -122,9 +122,9 @@ func parseSyntaxCheckResults(data []byte) ([]SyntaxCheckResult, error) {
 
 // ActivationResult represents the result of an activation.
 type ActivationResult struct {
-	Success  bool                       `json:"success"`
-	Messages []ActivationResultMessage  `json:"messages"`
-	Inactive []InactiveObject           `json:"inactive,omitempty"`
+	Success  bool                      `json:"success"`
+	Messages []ActivationResultMessage `json:"messages"`
+	Inactive []InactiveObject          `json:"inactive,omitempty"`
 }
 
 // ActivationResultMessage represents a message from activation.
@@ -135,6 +135,33 @@ type ActivationResultMessage struct {
 	Href           string `json:"href,omitempty"`
 	ForceSupported bool   `json:"forceSupported,omitempty"`
 	ShortText      string `json:"shortText"`
+}
+
+// ActivationResultError converts a logical activation failure into an error
+// without changing Activate's result-oriented public contract. Callers that
+// must not proceed after a failed activation should use this helper after the
+// HTTP request succeeds.
+func ActivationResultError(result *ActivationResult) error {
+	if result == nil {
+		return fmt.Errorf("activation returned no result")
+	}
+	if result.Success {
+		return nil
+	}
+
+	var diagnostics []string
+	for _, message := range result.Messages {
+		if text := strings.TrimSpace(message.ShortText); text != "" {
+			diagnostics = append(diagnostics, text)
+		}
+	}
+	if len(result.Inactive) > 0 {
+		diagnostics = append(diagnostics, fmt.Sprintf("%d object(s) remain inactive", len(result.Inactive)))
+	}
+	if len(diagnostics) == 0 {
+		return fmt.Errorf("activation returned success=false without a diagnostic")
+	}
+	return fmt.Errorf("activation failed: %s", strings.Join(diagnostics, "; "))
 }
 
 // InactiveObject represents an inactive object.
@@ -295,7 +322,7 @@ func parseInactiveObjects(data []byte) ([]InactiveObjectRecord, error) {
 		ParentURI string `xml:"parentUri,attr"`
 	}
 	type objectElement struct {
-		Deleted bool `xml:"deleted,attr"`
+		Deleted bool   `xml:"deleted,attr"`
 		User    string `xml:"user,attr"`
 		Ref     ref    `xml:"ref"`
 	}
@@ -491,6 +518,11 @@ func (c *Client) ActivatePackage(ctx context.Context, packageName string, maxObj
 	activation, err := c.ActivateMultiple(ctx, refs)
 	if err != nil {
 		return nil, fmt.Errorf("batch activation failed: %w", err)
+	}
+	if !activation.Success && len(activation.Inactive) == 0 {
+		// Logical failure without a per-object inactive list: nothing below could
+		// attribute the failure, so stop instead of reporting objects as activated.
+		return nil, ActivationResultError(activation)
 	}
 
 	// Build per-object reason strings from activation messages (keyed by ObjDescr/name).
@@ -786,13 +818,13 @@ func parseUnitTestResult(data []byte) (*UnitTestResult, error) {
 		} `xml:"stack"`
 	}
 	type testMethod struct {
-		URI           string `xml:"uri,attr"`
-		Type          string `xml:"type,attr"`
-		Name          string `xml:"name,attr"`
+		URI           string  `xml:"uri,attr"`
+		Type          string  `xml:"type,attr"`
+		Name          string  `xml:"name,attr"`
 		ExecutionTime float64 `xml:"executionTime,attr"`
-		URIType       string `xml:"uriType,attr"`
-		NavigationURI string `xml:"navigationUri,attr"`
-		Unit          string `xml:"unit,attr"`
+		URIType       string  `xml:"uriType,attr"`
+		NavigationURI string  `xml:"navigationUri,attr"`
+		Unit          string  `xml:"unit,attr"`
 		Alerts        struct {
 			Items []alert `xml:"alert"`
 		} `xml:"alerts"`
@@ -813,9 +845,9 @@ func parseUnitTestResult(data []byte) (*UnitTestResult, error) {
 		} `xml:"alerts"`
 	}
 	type program struct {
-		URI  string `xml:"uri,attr"`
-		Type string `xml:"type,attr"`
-		Name string `xml:"name,attr"`
+		URI         string `xml:"uri,attr"`
+		Type        string `xml:"type,attr"`
+		Name        string `xml:"name,attr"`
 		TestClasses struct {
 			Items []testClass `xml:"testClass"`
 		} `xml:"testClasses"`
