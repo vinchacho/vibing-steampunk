@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/oisee/vibing-steampunk/pkg/adt"
+	"github.com/vinchacho/vibing-steampunk/pkg/adt"
 )
 
 func TestValidateWriteSourceResult(t *testing.T) {

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/oisee/vibing-steampunk/pkg/adt"
+	"github.com/vinchacho/vibing-steampunk/pkg/adt"
 	lua "github.com/yuin/gopher-lua"
 )
 

@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/oisee/vibing-steampunk/internal/mcp"
-	"github.com/oisee/vibing-steampunk/pkg/config"
+	"github.com/vinchacho/vibing-steampunk/internal/mcp"
+	"github.com/vinchacho/vibing-steampunk/pkg/config"
 	"github.com/spf13/cobra"
 )
 
