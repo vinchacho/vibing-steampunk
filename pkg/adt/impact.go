@@ -76,9 +76,23 @@ func (c *Client) ComputeWriteImpact(ctx context.Context, objectURL, objectName, 
 	}
 	s.Available = true
 	pkgs := map[string]bool{}
+	seen := map[string]bool{}
 	for _, r := range refs {
-		if r.Name == objectName {
-			continue // where-used lists the queried object itself; not a caller
+		if !r.IsResult {
+			continue // structural grouping row (e.g. package node), not a usage — same filter as AnalyzeCDSImpact
+		}
+		// Exclude the queried object itself by URI, not name: name matching
+		// would also drop a genuine same-named caller of a different type.
+		if r.URI != "" && strings.EqualFold(r.URI, objectURL) {
+			continue
+		}
+		// An object reached via multiple includes appears once per include;
+		// count it once. Rows without a URI can't be correlated — count each.
+		if uri := strings.ToLower(r.URI); uri != "" {
+			if seen[uri] {
+				continue
+			}
+			seen[uri] = true
 		}
 		s.Callers++
 		if r.PackageName != "" {
@@ -92,6 +106,11 @@ func (c *Client) ComputeWriteImpact(ctx context.Context, objectURL, objectName, 
 		s.Packages = append(s.Packages, p)
 	}
 	sort.Strings(s.Packages)
+	if len(s.Packages) > 1 {
+		// Callers spread over 2+ packages is cross-package by definition,
+		// even when ownPackage is unknown ("").
+		s.CrossPackage = true
+	}
 	s.RecentTransports = c.recentTransportTouches(ctx, tadirType, objectName)
 	s.Risk = classifyImpactRisk(s)
 	s.Advice = impactAdvice(s)

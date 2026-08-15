@@ -65,11 +65,19 @@ func TestImpactAdviceTruncatesPackageList(t *testing.T) {
 }
 
 // impactUsageXML mirrors the ADT usageReferences response shape (see the
-// fixture in cds_tools_test.go / parseUsageReferences). It contains 4 rows:
-// the object's own self-reference row (ZCL_DEMO — where-used always lists the
-// queried object itself) plus 3 real callers across 2 packages, one of them
-// in the object's own package Z_PKG_A. Z_PKG_B rows come first to prove the
-// summary sorts package names.
+// fixture in cds_tools_test.go / parseUsageReferences), including an
+// isResult="false" structural grouping row. It contains 6 rows:
+//   - the object's own self-reference row (zcl_demo URI — where-used always
+//     lists the queried object itself; excluded by URI, not name)
+//   - 3 real callers across 2 packages, one in the object's own package
+//     Z_PKG_A (Z_PKG_B rows come first to prove the summary sorts package
+//     names)
+//   - a duplicate of caller1 with a different-case URI (reached via another
+//     include; must be deduped, case-insensitively)
+//   - an isResult="false" DEVC/K package grouping node (structural, not a
+//     usage; must be filtered)
+//
+// Expected Callers is therefore 3.
 const impactUsageXML = `<?xml version="1.0" encoding="UTF-8"?>
 <usageReferences:usageReferenceResult xmlns:usageReferences="http://www.sap.com/adt/ris/usageReferences" xmlns:adtcore="http://www.sap.com/adt/core">
   <usageReferences:referencedObjects>
@@ -88,10 +96,18 @@ const impactUsageXML = `<?xml version="1.0" encoding="UTF-8"?>
         <adtcore:packageRef adtcore:name="Z_PKG_B"/>
       </adtcore:adtObject>
     </usageReferences:referencedObject>
+    <usageReferences:referencedObject usageReferences:uri="/sap/bc/adt/oo/classes/ZCL_DEMO_CALLER1" usageReferences:isResult="true">
+      <adtcore:adtObject adtcore:uri="/sap/bc/adt/oo/classes/ZCL_DEMO_CALLER1" adtcore:type="CLAS/OC" adtcore:name="ZCL_DEMO_CALLER1" adtcore:description="Same caller via another include; different-case URI">
+        <adtcore:packageRef adtcore:name="Z_PKG_B"/>
+      </adtcore:adtObject>
+    </usageReferences:referencedObject>
     <usageReferences:referencedObject usageReferences:uri="/sap/bc/adt/oo/classes/zcl_demo_neighbor" usageReferences:isResult="true">
       <adtcore:adtObject adtcore:uri="/sap/bc/adt/oo/classes/zcl_demo_neighbor" adtcore:type="CLAS/OC" adtcore:name="ZCL_DEMO_NEIGHBOR" adtcore:description="Caller in the object's own package">
         <adtcore:packageRef adtcore:name="Z_PKG_A"/>
       </adtcore:adtObject>
+    </usageReferences:referencedObject>
+    <usageReferences:referencedObject usageReferences:uri="/sap/bc/adt/packages/z_pkg_b" usageReferences:isResult="false">
+      <adtcore:adtObject adtcore:uri="/sap/bc/adt/packages/z_pkg_b" adtcore:type="DEVC/K" adtcore:name="Z_PKG_B" adtcore:description="Structural package grouping node, not a usage"/>
     </usageReferences:referencedObject>
   </usageReferences:referencedObjects>
 </usageReferences:usageReferenceResult>`
@@ -120,7 +136,7 @@ func TestComputeWriteImpactCountsCallersAcrossPackages(t *testing.T) {
 		t.Fatalf("Available = false (%s), want true", s.Unavailable)
 	}
 	if s.Callers != 3 {
-		t.Fatalf("Callers = %d, want 3 (self-reference row must be excluded)", s.Callers)
+		t.Fatalf("Callers = %d, want 3 (self-reference, isResult=false grouping, and duplicate-URI rows must be excluded)", s.Callers)
 	}
 	if want := []string{"Z_PKG_A", "Z_PKG_B"}; !reflect.DeepEqual(s.Packages, want) {
 		t.Fatalf("Packages = %v, want sorted %v", s.Packages, want)
@@ -157,6 +173,9 @@ func TestComputeWriteImpactDegradesWhenLookupFails(t *testing.T) {
 	}
 	if s.Unavailable == "" {
 		t.Fatal("Unavailable is empty, want a reason")
+	}
+	if s.Advice == "" {
+		t.Fatal("Advice is empty, want degraded-path guidance (verify callers manually)")
 	}
 	if s.Callers != 0 || s.CrossPackage || len(s.Packages) != 0 {
 		t.Fatalf("degraded summary must stay empty, got %+v", s)

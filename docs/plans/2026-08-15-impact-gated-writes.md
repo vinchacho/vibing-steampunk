@@ -145,8 +145,18 @@ func (c *Client) ComputeWriteImpact(ctx context.Context, objectURL, objectName, 
 	}
 	s.Available = true
 	pkgs := map[string]bool{}
+	seen := map[string]bool{}
 	for _, r := range refs {
-		if r.Name == objectName { continue } // self-reference
+		if !r.IsResult { continue } // structural grouping row, not a usage (same filter as AnalyzeCDSImpact)
+		// Self-exclusion by URI, not name: name matching would also drop a
+		// genuine same-named caller of a different type.
+		if r.URI != "" && strings.EqualFold(r.URI, objectURL) { continue }
+		// Dedupe on URI: an object reached via multiple includes counts once.
+		// Rows without a URI can't be correlated — count each.
+		if uri := strings.ToLower(r.URI); uri != "" {
+			if seen[uri] { continue }
+			seen[uri] = true
+		}
 		s.Callers++
 		if r.PackageName != "" {
 			pkgs[r.PackageName] = true
@@ -155,6 +165,7 @@ func (c *Client) ComputeWriteImpact(ctx context.Context, objectURL, objectName, 
 	}
 	for p := range pkgs { s.Packages = append(s.Packages, p) }
 	sort.Strings(s.Packages)
+	if len(s.Packages) > 1 { s.CrossPackage = true } // 2+ caller packages is cross-package even when ownPackage is ""
 	s.RecentTransports = c.recentTransportTouches(ctx, tadirType, objectName) // Task 3; returns nil for now
 	s.Risk = classifyImpactRisk(s)
 	s.Advice = impactAdvice(s)
@@ -288,5 +299,6 @@ Same pattern as Task 5. Commit `feat(adt): advisory impact on delete and rename`
 - `go build ./... && go vet ./... && go test ./...` → all green
 - Manual (sandbox): `--impact-gate advise` → edit object with known callers → `impact` block in response; `--impact-gate block --impact-threshold medium` → block → token retry succeeds
 - `grep -c 'shouldRegister("' internal/mcp/tools_register.go` unchanged (no new tools, only params)
+- Confirm on the live system that object-level usageReferences result rows carry `isResult=true` (the counting loop skips `isResult="false"` grouping rows)
 
 **Commit:** `test(adt): impact gate integration coverage`.
