@@ -56,6 +56,17 @@ func callIndex(calls []recordedCall, match func(recordedCall) bool) int {
 	return -1
 }
 
+// countCalls returns how many recorded calls match the predicate.
+func countCalls(calls []recordedCall, match func(recordedCall) bool) int {
+	n := 0
+	for _, call := range calls {
+		if match(call) {
+			n++
+		}
+	}
+	return n
+}
+
 func isImpactRefsCall(c recordedCall) bool {
 	return strings.Contains(c.path, "usageReferences")
 }
@@ -116,6 +127,9 @@ func TestWriteSourceUpdateComputesImpactBeforeLockWhenAdvised(t *testing.T) {
 	}
 	if sqlIdx := callIndex(mock.calls, isImpactSQLCall); sqlIdx >= 0 && sqlIdx > lockIdx {
 		t.Fatalf("E071 lookup at call %d AFTER lock at call %d", sqlIdx, lockIdx)
+	}
+	if n := countCalls(mock.calls, isImpactRefsCall); n != 1 {
+		t.Fatalf("usageReferences requests = %d, want exactly 1 per logical write", n)
 	}
 }
 
@@ -219,6 +233,9 @@ func TestEditSourceComputesImpactWhenAdvised(t *testing.T) {
 	if sqlIdx < 0 {
 		t.Fatal("no E071 RunQuery recorded — transport leg was skipped entirely")
 	}
+	if n := countCalls(mock.calls, isImpactRefsCall); n != 1 {
+		t.Fatalf("usageReferences requests = %d, want exactly 1 per logical write", n)
+	}
 }
 
 func TestEditSourceSkipsImpactWhenGateOff(t *testing.T) {
@@ -247,6 +264,91 @@ func TestEditSourceSkipsImpactWhenGateOff(t *testing.T) {
 	}
 	if idx := callIndex(mock.calls, isImpactSQLCall); idx >= 0 {
 		t.Fatalf("E071 RunQuery request at call %d — gate off must compute nothing", idx)
+	}
+}
+
+// TestWriteSourceUpsertResolvingToUpdateComputesImpact pins that upsert mode
+// resolving to an update (the existence probe finds the object) takes the
+// same impact-computation path as an explicit update.
+func TestWriteSourceUpsertResolvingToUpdateComputesImpact(t *testing.T) {
+	mock := &methodPathMock{routes: []routedResponse{
+		{method: http.MethodGet, pathSubstring: "/source/main", status: http.StatusOK, body: "REPORT ztest."},
+		{method: http.MethodPost, pathSubstring: "usageReferences", status: http.StatusOK, body: impactUsageXML},
+		{method: http.MethodPost, pathSubstring: "datapreview/freestyle", status: http.StatusOK, body: impactEmptyE071XML},
+		{method: http.MethodPost, pathSubstring: "/checkruns", status: http.StatusOK, body: impactCleanSyntaxXML},
+		{method: http.MethodPost, pathSubstring: "/programs/programs/ZTEST", status: http.StatusOK, body: syntheticLocalLockXML},
+		{method: http.MethodPut, pathSubstring: "/source/main", status: http.StatusOK, body: ""},
+		{method: http.MethodPost, pathSubstring: "/activation", status: http.StatusOK, body: ""},
+	}}
+	client := newImpactWorkflowClient(mock)
+	client.Safety().ImpactGate = ImpactGateAdvise
+
+	result, err := client.WriteSource(context.Background(), "PROG", "ZTEST", "REPORT ztest.", &WriteSourceOptions{
+		Mode: WriteModeUpsert,
+	})
+	if err != nil {
+		t.Fatalf("WriteSource() error = %v", err)
+	}
+	if !result.Success || result.Mode != "updated" {
+		t.Fatalf("upsert did not resolve to update: %#v", result)
+	}
+	if result.Impact == nil {
+		t.Fatal("Impact = nil, want summary when upsert resolves to update under gate advise")
+	}
+	if n := countCalls(mock.calls, isImpactRefsCall); n != 1 {
+		t.Fatalf("usageReferences requests = %d, want exactly 1 per logical write", n)
+	}
+}
+
+// The two tests below pin the review fix: when the local op-type policy will
+// refuse the write anyway (read-only mode here), the gate must not spend
+// network calls computing a blast radius for a mutation that never happens.
+
+func TestWriteSourceRefusedByPolicySkipsImpact(t *testing.T) {
+	mock := &methodPathMock{routes: []routedResponse{
+		// Existence probe (a read, permitted in read-only mode) → update path.
+		{method: http.MethodGet, pathSubstring: "/source/main", status: http.StatusOK, body: "REPORT ztest."},
+	}}
+	client := newImpactWorkflowClient(mock)
+	client.Safety().ImpactGate = ImpactGateAdvise
+	client.Safety().ReadOnly = true
+
+	_, err := client.WriteSource(context.Background(), "PROG", "ZTEST", "REPORT ztest.", &WriteSourceOptions{
+		Mode: WriteModeUpdate,
+	})
+	if err == nil {
+		t.Fatal("WriteSource() error = nil, want read-only policy refusal")
+	}
+	if !strings.Contains(err.Error(), "blocked by safety configuration") {
+		t.Fatalf("error %q, want safety-configuration refusal", err)
+	}
+	if idx := callIndex(mock.calls, isImpactRefsCall); idx >= 0 {
+		t.Fatalf("usageReferences request at call %d — refused writes must not compute impact", idx)
+	}
+	if idx := callIndex(mock.calls, isImpactSQLCall); idx >= 0 {
+		t.Fatalf("E071 RunQuery request at call %d — refused writes must not compute impact", idx)
+	}
+}
+
+func TestEditSourceRefusedByPolicySkipsImpact(t *testing.T) {
+	mock := &methodPathMock{} // no routes: any request would 404 and fail the test below
+	client := newImpactWorkflowClient(mock)
+	client.Safety().ImpactGate = ImpactGateAdvise
+	client.Safety().ReadOnly = true
+
+	_, err := client.EditSource(context.Background(),
+		"/sap/bc/adt/programs/programs/ZTEST", "'Hello'", "'World'", false, true, false)
+	if err == nil {
+		t.Fatal("EditSource() error = nil, want read-only policy refusal")
+	}
+	if !strings.Contains(err.Error(), "blocked by safety configuration") {
+		t.Fatalf("error %q, want safety-configuration refusal", err)
+	}
+	if idx := callIndex(mock.calls, isImpactRefsCall); idx >= 0 {
+		t.Fatalf("usageReferences request at call %d — refused writes must not compute impact", idx)
+	}
+	if idx := callIndex(mock.calls, isImpactSQLCall); idx >= 0 {
+		t.Fatalf("E071 RunQuery request at call %d — refused writes must not compute impact", idx)
 	}
 }
 

@@ -66,6 +66,80 @@ func TestImpactAdviceTruncatesPackageList(t *testing.T) {
 	}
 }
 
+// TestDeriveWriteImpactIdentity pins the URL→identity mapping per ADT URL
+// family. Two review-driven contracts live here: program includes keep their
+// own identity (R3TR PROG <include> in E071 — the "/includes/" cut applies
+// only to the class-include grammar), and CDS DDL sources map to DDLS so CDS
+// edits get a transport-recency leg.
+func TestDeriveWriteImpactIdentity(t *testing.T) {
+	tests := []struct {
+		name          string
+		objectURL     string
+		wantURL       string
+		wantName      string
+		wantTadirType string
+	}{
+		{
+			name:          "class source main",
+			objectURL:     "/sap/bc/adt/oo/classes/ZCL_DEMO/source/main",
+			wantURL:       "/sap/bc/adt/oo/classes/ZCL_DEMO",
+			wantName:      "ZCL_DEMO",
+			wantTadirType: "CLAS",
+		},
+		{
+			name:          "class testclasses include collapses to parent class",
+			objectURL:     "/sap/bc/adt/oo/classes/ZCL_DEMO/includes/testclasses",
+			wantURL:       "/sap/bc/adt/oo/classes/ZCL_DEMO",
+			wantName:      "ZCL_DEMO",
+			wantTadirType: "CLAS",
+		},
+		{
+			name:          "program",
+			objectURL:     "/sap/bc/adt/programs/programs/ZDEMO_REPORT/source/main",
+			wantURL:       "/sap/bc/adt/programs/programs/ZDEMO_REPORT",
+			wantName:      "ZDEMO_REPORT",
+			wantTadirType: "PROG",
+		},
+		{
+			name:          "program include keeps its own identity",
+			objectURL:     "/sap/bc/adt/programs/includes/zinc/source/main",
+			wantURL:       "/sap/bc/adt/programs/includes/zinc",
+			wantName:      "ZINC",
+			wantTadirType: "PROG",
+		},
+		{
+			name:          "function group",
+			objectURL:     "/sap/bc/adt/functions/groups/ZDEMO_FG",
+			wantURL:       "/sap/bc/adt/functions/groups/ZDEMO_FG",
+			wantName:      "ZDEMO_FG",
+			wantTadirType: "FUGR",
+		},
+		{
+			name:          "function module",
+			objectURL:     "/sap/bc/adt/functions/groups/ZDEMO_FG/fmodules/ZDEMO_FM/source/main",
+			wantURL:       "/sap/bc/adt/functions/groups/ZDEMO_FG/fmodules/ZDEMO_FM",
+			wantName:      "ZDEMO_FM",
+			wantTadirType: "FUGR",
+		},
+		{
+			name:          "CDS DDL source",
+			objectURL:     "/sap/bc/adt/ddic/ddl/sources/zdemo_cds/source/main",
+			wantURL:       "/sap/bc/adt/ddic/ddl/sources/zdemo_cds",
+			wantName:      "ZDEMO_CDS",
+			wantTadirType: "DDLS",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotURL, gotName, gotType := deriveWriteImpactIdentity(tt.objectURL)
+			if gotURL != tt.wantURL || gotName != tt.wantName || gotType != tt.wantTadirType {
+				t.Fatalf("deriveWriteImpactIdentity(%q) = (%q, %q, %q), want (%q, %q, %q)",
+					tt.objectURL, gotURL, gotName, gotType, tt.wantURL, tt.wantName, tt.wantTadirType)
+			}
+		})
+	}
+}
+
 // impactUsageXML mirrors the ADT usageReferences response shape (see the
 // fixture in cds_tools_test.go / parseUsageReferences), including an
 // isResult="false" structural grouping row. It contains 6 rows:

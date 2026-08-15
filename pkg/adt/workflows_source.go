@@ -261,9 +261,13 @@ func (c *Client) WriteSource(ctx context.Context, objectType, name, source strin
 	// stateless call lands between LOCK and PUT. Update path only: a
 	// brand-new object has no callers to analyze. objectType here is the
 	// bare TADIR type ("PROG"/"CLAS"/...); opts.Package is a best-effort
-	// own-package hint (usually empty on updates, which is fine).
+	// own-package hint (usually empty on updates, which is fine). Skipped
+	// when the local op-type policy would refuse the write anyway (e.g.
+	// read-only mode): checkSafety is local and idempotent, and checkMutation
+	// below re-runs it to produce the refusal error.
 	var impact *ImpactSummary
-	if actualMode != WriteModeCreate && impactGateActive(&c.config.Safety) {
+	if actualMode != WriteModeCreate && impactGateActive(&c.config.Safety) &&
+		c.checkSafety(mutation.Op, mutation.OpName) == nil {
 		impact = c.ComputeWriteImpact(ctx, mutation.ObjectURL, name, objectType, opts.Package)
 		ctx = withImpactComputed(ctx, impact)
 	}

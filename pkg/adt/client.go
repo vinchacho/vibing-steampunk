@@ -171,8 +171,15 @@ func (c *Client) getObjectPackage(ctx context.Context, objectURL string) (string
 func normalizeObjectURLForPackageCheck(objectURL string) string {
 	normalized := strings.TrimSuffix(objectURL, "/")
 
-	if idx := strings.Index(normalized, "/includes/"); idx >= 0 {
-		return normalized[:idx]
+	// The "/includes/<type>" cut applies only to the class-include grammar
+	// (/sap/bc/adt/oo/classes/ZCL_X/includes/testclasses → parent class).
+	// Program includes (/sap/bc/adt/programs/includes/ZINC/...) are standalone
+	// TADIR objects — cutting there would leave the bare "/sap/bc/adt/programs"
+	// collection URL instead of the include object.
+	if strings.Contains(normalized, "/oo/classes/") {
+		if idx := strings.Index(normalized, "/includes/"); idx >= 0 {
+			return normalized[:idx]
+		}
 	}
 	if strings.HasSuffix(normalized, "/source/main") {
 		return strings.TrimSuffix(normalized, "/source/main")

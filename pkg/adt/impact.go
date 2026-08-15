@@ -72,23 +72,35 @@ func impactGateActive(cfg *SafetyConfig) bool {
 	return cfg.ImpactGate == ImpactGateAdvise || cfg.ImpactGate == ImpactGateBlock
 }
 
-// computeURLWriteImpact derives the whole-object identity from an ADT object
-// URL (EditSource receives only a URL, possibly pointing at /source/main or a
-// class include) and computes the write-impact summary for it. An unmappable
-// URL degrades inside ComputeWriteImpact rather than erroring: the name may
-// be empty and an unknown TADIR type simply skips the transport-recency leg.
-func (c *Client) computeURLWriteImpact(ctx context.Context, objectURL string) *ImpactSummary {
-	normalized := normalizeObjectURLForPackageCheck(objectURL)
-	name, err := objectNameFromURL(normalized)
+// deriveWriteImpactIdentity maps an ADT object URL (possibly pointing at
+// /source/main or a class include) to the whole-object identity used for
+// blast-radius analysis: the normalized object URL, the object name, and the
+// bare R3TR TADIR type ("CLAS", "PROG", ...; "" when the URL family is
+// unknown). Class includes collapse to their parent class; program includes
+// are standalone TADIR objects (E071 keys them as R3TR PROG <include>) and
+// keep their own identity.
+func deriveWriteImpactIdentity(objectURL string) (normalizedURL, name, tadirType string) {
+	normalizedURL = normalizeObjectURLForPackageCheck(objectURL)
+	name, err := objectNameFromURL(normalizedURL)
 	if err != nil {
 		name = ""
 	}
 	// extractTypeFromURI yields "CLAS/OC"-style workbench types; E071 keys on
 	// the bare R3TR TADIR type ("CLAS").
-	tadirType := extractTypeFromURI(normalized)
+	tadirType = extractTypeFromURI(normalizedURL)
 	if idx := strings.Index(tadirType, "/"); idx >= 0 {
 		tadirType = tadirType[:idx]
 	}
+	return normalizedURL, name, tadirType
+}
+
+// computeURLWriteImpact derives the whole-object identity from an ADT object
+// URL (EditSource receives only a URL) and computes the write-impact summary
+// for it. An unmappable URL degrades inside ComputeWriteImpact rather than
+// erroring: the name may be empty and an unknown TADIR type simply skips the
+// transport-recency leg.
+func (c *Client) computeURLWriteImpact(ctx context.Context, objectURL string) *ImpactSummary {
+	normalized, name, tadirType := deriveWriteImpactIdentity(objectURL)
 	return c.ComputeWriteImpact(ctx, normalized, name, tadirType, "")
 }
 
