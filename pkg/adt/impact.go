@@ -5,7 +5,12 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 )
+
+// impactNow returns the current time. It is a package var so tests can pin
+// the 90-day transport-recency window to a fixed date.
+var impactNow = time.Now
 
 // TransportTouch is one recent transport that carried the object.
 type TransportTouch struct {
@@ -117,10 +122,130 @@ func (c *Client) ComputeWriteImpact(ctx context.Context, objectURL, objectName, 
 	return s
 }
 
-// recentTransportTouches returns transports that recently carried the object.
-// Task 3 implements the E071→E070 lookup; until then summaries are refs-only.
-func (c *Client) recentTransportTouches(_ context.Context, _, _ string) []TransportTouch {
-	return nil
+// impactTransportWindowDays is the recency window for transport touches.
+const impactTransportWindowDays = 90
+
+// recentTransportTouches returns the transport requests that carried the
+// object within the last 90 days, via the canonical E071→E070 two-query
+// pattern (mirrors `vsp graph co-change`, cmd/vsp/cli_extra.go). Tasks
+// collapse to their parent request via STRKORR, deduped per request. Any
+// failure — and BlockFreeSQL — degrades silently to nil so the summary stays
+// refs-only (design §Degradation ladder, rung 2). E07x results are never
+// cached: their whole point is to reflect the current transport state
+// (cmd/vsp/audit_cache.go rule).
+func (c *Client) recentTransportTouches(ctx context.Context, tadirType, objectName string) []TransportTouch {
+	if c.config.Safety.BlockFreeSQL {
+		return nil // free SQL blocked: skip before issuing any request
+	}
+	objType := strings.ToUpper(strings.TrimSpace(tadirType))
+	objName := strings.ToUpper(strings.TrimSpace(objectName))
+	if objType == "" || objName == "" || strings.Contains(objType+objName, "'") {
+		return nil // nothing to query, or unquotable identifier — skip rather than emit broken SQL
+	}
+
+	// Step 1: transports containing this object (E071).
+	e071Query := fmt.Sprintf(
+		"SELECT TRKORR, PGMID, OBJECT, OBJ_NAME FROM E071 WHERE PGMID = 'R3TR' AND OBJECT = '%s' AND OBJ_NAME = '%s'",
+		objType, objName)
+	e071Result, err := c.RunQuery(ctx, e071Query, 200)
+	if err != nil || e071Result == nil || len(e071Result.Rows) == 0 {
+		return nil
+	}
+	trNums := make(map[string]bool)
+	for _, row := range e071Result.Rows {
+		tr := strings.TrimSpace(fmt.Sprintf("%v", row["TRKORR"]))
+		if tr != "" {
+			trNums[tr] = true
+		}
+	}
+	if len(trNums) == 0 {
+		return nil
+	}
+
+	// Step 2: resolve E070 headers (request/task hierarchy).
+	trList := make([]string, 0, len(trNums))
+	for tr := range trNums {
+		trList = append(trList, "'"+tr+"'")
+	}
+	sort.Strings(trList) // deterministic SQL despite map iteration order
+	e070Query := fmt.Sprintf(
+		"SELECT TRKORR, STRKORR, TRFUNCTION, TRSTATUS, AS4USER, AS4DATE FROM E070 WHERE TRKORR IN (%s)",
+		strings.Join(trList, ","))
+	e070Result, err := c.RunQuery(ctx, e070Query, 500)
+	if err != nil || e070Result == nil {
+		return nil
+	}
+
+	type e070Header struct {
+		trkorr, strkorr, trfunction, trstatus, as4user, as4date string
+	}
+	headers := make(map[string]e070Header)
+	for _, row := range e070Result.Rows {
+		h := e070Header{
+			trkorr:     strings.TrimSpace(fmt.Sprintf("%v", row["TRKORR"])),
+			strkorr:    strings.TrimSpace(fmt.Sprintf("%v", row["STRKORR"])),
+			trfunction: strings.TrimSpace(fmt.Sprintf("%v", row["TRFUNCTION"])),
+			trstatus:   strings.TrimSpace(fmt.Sprintf("%v", row["TRSTATUS"])),
+			as4user:    strings.TrimSpace(fmt.Sprintf("%v", row["AS4USER"])),
+			as4date:    strings.TrimSpace(fmt.Sprintf("%v", row["AS4DATE"])),
+		}
+		if h.trkorr != "" {
+			headers[h.trkorr] = h
+		}
+	}
+
+	// Collapse tasks to their parent request and dedupe per request (the
+	// object-level analogue of aggregateChangelogEntries in
+	// cmd/vsp/changelog.go). When the parent header is absent from the
+	// result, fall back to the task's own header — same fallback as there.
+	cutoff := impactNow().AddDate(0, 0, -impactTransportWindowDays).Format("20060102")
+	keys := make([]string, 0, len(headers))
+	for k := range headers {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	seen := make(map[string]bool)
+	var touches []TransportTouch
+	for _, k := range keys {
+		h := headers[k]
+		if h.strkorr != "" {
+			if parent, ok := headers[h.strkorr]; ok {
+				h = parent
+			}
+		}
+		if seen[h.trkorr] {
+			continue
+		}
+		seen[h.trkorr] = true
+		// AS4DATE is YYYYMMDD, so the 90-day window is a string compare.
+		if h.as4date == "" || h.as4date < cutoff {
+			continue
+		}
+		touches = append(touches, TransportTouch{
+			Transport: h.trkorr,
+			Type:      h.trfunction,
+			Status:    h.trstatus,
+			Owner:     h.as4user,
+			Date:      formatImpactDate(h.as4date),
+		})
+	}
+	// Most recent first: the advice sentence cites touches[0].
+	sort.Slice(touches, func(i, j int) bool {
+		if touches[i].Date != touches[j].Date {
+			return touches[i].Date > touches[j].Date
+		}
+		return touches[i].Transport < touches[j].Transport
+	})
+	return touches
+}
+
+// formatImpactDate renders an SAP DATS value (YYYYMMDD) as YYYY-MM-DD,
+// passing through anything it cannot parse.
+func formatImpactDate(dats string) string {
+	if t, err := time.Parse("20060102", dats); err == nil {
+		return t.Format("2006-01-02")
+	}
+	return dats
 }
 
 // impactAdvice renders one agent-directed sentence for the summary's risk tier.

@@ -2,10 +2,12 @@ package adt
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func containsAll(s string, subs ...string) bool {
@@ -150,8 +152,14 @@ func TestComputeWriteImpactCountsCallersAcrossPackages(t *testing.T) {
 	if s.Advice == "" {
 		t.Fatal("Advice is empty, want an agent-directed sentence")
 	}
-	if len(mock.requests) != 1 || !strings.Contains(mock.requests[0].URL.Path, "usageReferences") {
-		t.Fatalf("requests = %d (%v), want one usageReferences call", len(mock.requests), mock.requests)
+	// Request 1 is the where-used POST; request 2 is the transport-recency
+	// leg's E071 attempt, which runs the mock out of responses (500) and
+	// degrades to no touches — the refs leg is unaffected.
+	if len(mock.requests) != 2 || !strings.Contains(mock.requests[0].URL.Path, "usageReferences") {
+		t.Fatalf("requests = %d, want usageReferences then the E071 attempt", len(mock.requests))
+	}
+	if len(s.RecentTransports) != 0 {
+		t.Fatalf("RecentTransports = %+v, want none (E071 lookup failed)", s.RecentTransports)
 	}
 }
 
@@ -179,5 +187,304 @@ func TestComputeWriteImpactDegradesWhenLookupFails(t *testing.T) {
 	}
 	if s.Callers != 0 || s.CrossPackage || len(s.Packages) != 0 {
 		t.Fatalf("degraded summary must stay empty, got %+v", s)
+	}
+}
+
+// --- Transport-recency leg (E071→E070 via RunQuery) ---
+
+// pinImpactNow pins the transport-recency clock to 2026-08-15 (cutoff for the
+// 90-day window is therefore 2026-05-17) and restores it on cleanup.
+func pinImpactNow(t *testing.T) {
+	t.Helper()
+	prev := impactNow
+	impactNow = func() time.Time { return time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC) }
+	t.Cleanup(func() { impactNow = prev })
+}
+
+// readRequestBody drains a recorded mock request body (the mock never
+// consumes it, so it is still readable after the call).
+func readRequestBody(t *testing.T, req *http.Request) string {
+	t.Helper()
+	if req.Body == nil {
+		return ""
+	}
+	b, err := io.ReadAll(req.Body)
+	if err != nil {
+		t.Fatalf("reading recorded request body: %v", err)
+	}
+	return string(b)
+}
+
+// impactE071XML mirrors the ADT datapreview/freestyle response shape parsed
+// by parseTableContents (per-column metadata + dataSet vectors). Two E071
+// entries for ZCL_DEMO: one carried by task A4HK900101 and one attached
+// directly to request A4HK900100.
+const impactE071XML = `<?xml version="1.0" encoding="utf-8"?>
+<dataPreview:tableData xmlns:dataPreview="http://www.sap.com/adt/dataPreview">
+  <dataPreview:totalRows>2</dataPreview:totalRows>
+  <dataPreview:columns>
+    <dataPreview:metadata dataPreview:name="TRKORR" dataPreview:type="C" dataPreview:description="Request/Task" dataPreview:keyAttribute="false" dataPreview:length="20"/>
+    <dataPreview:dataSet>
+      <dataPreview:data>A4HK900101</dataPreview:data>
+      <dataPreview:data>A4HK900100</dataPreview:data>
+    </dataPreview:dataSet>
+  </dataPreview:columns>
+  <dataPreview:columns>
+    <dataPreview:metadata dataPreview:name="PGMID" dataPreview:type="C" dataPreview:description="Program ID" dataPreview:keyAttribute="false" dataPreview:length="4"/>
+    <dataPreview:dataSet>
+      <dataPreview:data>R3TR</dataPreview:data>
+      <dataPreview:data>R3TR</dataPreview:data>
+    </dataPreview:dataSet>
+  </dataPreview:columns>
+  <dataPreview:columns>
+    <dataPreview:metadata dataPreview:name="OBJECT" dataPreview:type="C" dataPreview:description="Object Type" dataPreview:keyAttribute="false" dataPreview:length="4"/>
+    <dataPreview:dataSet>
+      <dataPreview:data>CLAS</dataPreview:data>
+      <dataPreview:data>CLAS</dataPreview:data>
+    </dataPreview:dataSet>
+  </dataPreview:columns>
+  <dataPreview:columns>
+    <dataPreview:metadata dataPreview:name="OBJ_NAME" dataPreview:type="C" dataPreview:description="Object Name" dataPreview:keyAttribute="false" dataPreview:length="120"/>
+    <dataPreview:dataSet>
+      <dataPreview:data>ZCL_DEMO</dataPreview:data>
+      <dataPreview:data>ZCL_DEMO</dataPreview:data>
+    </dataPreview:dataSet>
+  </dataPreview:columns>
+</dataPreview:tableData>`
+
+// impactE070XML holds the headers for both E071 hits: the task row points at
+// its parent request via STRKORR; the request row is its own header. Both
+// dates fall inside the 90-day window relative to the pinned clock. The
+// expected collapsed touch therefore carries the PARENT request's fields
+// (status R, date 2026-08-03), not the task's (status D, date 2026-08-10).
+const impactE070XML = `<?xml version="1.0" encoding="utf-8"?>
+<dataPreview:tableData xmlns:dataPreview="http://www.sap.com/adt/dataPreview">
+  <dataPreview:totalRows>2</dataPreview:totalRows>
+  <dataPreview:columns>
+    <dataPreview:metadata dataPreview:name="TRKORR" dataPreview:type="C" dataPreview:description="Request/Task" dataPreview:keyAttribute="false" dataPreview:length="20"/>
+    <dataPreview:dataSet>
+      <dataPreview:data>A4HK900101</dataPreview:data>
+      <dataPreview:data>A4HK900100</dataPreview:data>
+    </dataPreview:dataSet>
+  </dataPreview:columns>
+  <dataPreview:columns>
+    <dataPreview:metadata dataPreview:name="STRKORR" dataPreview:type="C" dataPreview:description="Higher-Level Request" dataPreview:keyAttribute="false" dataPreview:length="20"/>
+    <dataPreview:dataSet>
+      <dataPreview:data>A4HK900100</dataPreview:data>
+      <dataPreview:data></dataPreview:data>
+    </dataPreview:dataSet>
+  </dataPreview:columns>
+  <dataPreview:columns>
+    <dataPreview:metadata dataPreview:name="TRFUNCTION" dataPreview:type="C" dataPreview:description="Type" dataPreview:keyAttribute="false" dataPreview:length="1"/>
+    <dataPreview:dataSet>
+      <dataPreview:data>K</dataPreview:data>
+      <dataPreview:data>K</dataPreview:data>
+    </dataPreview:dataSet>
+  </dataPreview:columns>
+  <dataPreview:columns>
+    <dataPreview:metadata dataPreview:name="TRSTATUS" dataPreview:type="C" dataPreview:description="Status" dataPreview:keyAttribute="false" dataPreview:length="1"/>
+    <dataPreview:dataSet>
+      <dataPreview:data>D</dataPreview:data>
+      <dataPreview:data>R</dataPreview:data>
+    </dataPreview:dataSet>
+  </dataPreview:columns>
+  <dataPreview:columns>
+    <dataPreview:metadata dataPreview:name="AS4USER" dataPreview:type="C" dataPreview:description="Owner" dataPreview:keyAttribute="false" dataPreview:length="12"/>
+    <dataPreview:dataSet>
+      <dataPreview:data>TESTUSER</dataPreview:data>
+      <dataPreview:data>TESTUSER</dataPreview:data>
+    </dataPreview:dataSet>
+  </dataPreview:columns>
+  <dataPreview:columns>
+    <dataPreview:metadata dataPreview:name="AS4DATE" dataPreview:type="D" dataPreview:description="Date" dataPreview:keyAttribute="false" dataPreview:length="8"/>
+    <dataPreview:dataSet>
+      <dataPreview:data>20260810</dataPreview:data>
+      <dataPreview:data>20260803</dataPreview:data>
+    </dataPreview:dataSet>
+  </dataPreview:columns>
+</dataPreview:tableData>`
+
+// impactE071OldXML / impactE070OldXML: one request whose AS4DATE (2026-03-01)
+// is older than the 90-day window relative to the pinned clock.
+const impactE071OldXML = `<?xml version="1.0" encoding="utf-8"?>
+<dataPreview:tableData xmlns:dataPreview="http://www.sap.com/adt/dataPreview">
+  <dataPreview:totalRows>1</dataPreview:totalRows>
+  <dataPreview:columns>
+    <dataPreview:metadata dataPreview:name="TRKORR" dataPreview:type="C" dataPreview:description="Request/Task" dataPreview:keyAttribute="false" dataPreview:length="20"/>
+    <dataPreview:dataSet>
+      <dataPreview:data>A4HK900200</dataPreview:data>
+    </dataPreview:dataSet>
+  </dataPreview:columns>
+  <dataPreview:columns>
+    <dataPreview:metadata dataPreview:name="OBJ_NAME" dataPreview:type="C" dataPreview:description="Object Name" dataPreview:keyAttribute="false" dataPreview:length="120"/>
+    <dataPreview:dataSet>
+      <dataPreview:data>ZCL_DEMO</dataPreview:data>
+    </dataPreview:dataSet>
+  </dataPreview:columns>
+</dataPreview:tableData>`
+
+const impactE070OldXML = `<?xml version="1.0" encoding="utf-8"?>
+<dataPreview:tableData xmlns:dataPreview="http://www.sap.com/adt/dataPreview">
+  <dataPreview:totalRows>1</dataPreview:totalRows>
+  <dataPreview:columns>
+    <dataPreview:metadata dataPreview:name="TRKORR" dataPreview:type="C" dataPreview:description="Request/Task" dataPreview:keyAttribute="false" dataPreview:length="20"/>
+    <dataPreview:dataSet>
+      <dataPreview:data>A4HK900200</dataPreview:data>
+    </dataPreview:dataSet>
+  </dataPreview:columns>
+  <dataPreview:columns>
+    <dataPreview:metadata dataPreview:name="STRKORR" dataPreview:type="C" dataPreview:description="Higher-Level Request" dataPreview:keyAttribute="false" dataPreview:length="20"/>
+    <dataPreview:dataSet>
+      <dataPreview:data></dataPreview:data>
+    </dataPreview:dataSet>
+  </dataPreview:columns>
+  <dataPreview:columns>
+    <dataPreview:metadata dataPreview:name="TRFUNCTION" dataPreview:type="C" dataPreview:description="Type" dataPreview:keyAttribute="false" dataPreview:length="1"/>
+    <dataPreview:dataSet>
+      <dataPreview:data>K</dataPreview:data>
+    </dataPreview:dataSet>
+  </dataPreview:columns>
+  <dataPreview:columns>
+    <dataPreview:metadata dataPreview:name="TRSTATUS" dataPreview:type="C" dataPreview:description="Status" dataPreview:keyAttribute="false" dataPreview:length="1"/>
+    <dataPreview:dataSet>
+      <dataPreview:data>R</dataPreview:data>
+    </dataPreview:dataSet>
+  </dataPreview:columns>
+  <dataPreview:columns>
+    <dataPreview:metadata dataPreview:name="AS4USER" dataPreview:type="C" dataPreview:description="Owner" dataPreview:keyAttribute="false" dataPreview:length="12"/>
+    <dataPreview:dataSet>
+      <dataPreview:data>TESTUSER</dataPreview:data>
+    </dataPreview:dataSet>
+  </dataPreview:columns>
+  <dataPreview:columns>
+    <dataPreview:metadata dataPreview:name="AS4DATE" dataPreview:type="D" dataPreview:description="Date" dataPreview:keyAttribute="false" dataPreview:length="8"/>
+    <dataPreview:dataSet>
+      <dataPreview:data>20260301</dataPreview:data>
+    </dataPreview:dataSet>
+  </dataPreview:columns>
+</dataPreview:tableData>`
+
+//nolint:bodyclose // Transport.Request owns and closes every synthetic response body.
+func TestRecentTransportTouchesCollapsesTasksToParent(t *testing.T) {
+	pinImpactNow(t)
+	client, mock := newImpactTestClient(
+		newMockResponse(http.StatusOK, impactE071XML, nil),
+		newMockResponse(http.StatusOK, impactE070XML, nil),
+	)
+
+	// Lowercase inputs prove the SQL uppercases type and name (mirrors
+	// cli_extra.go's strings.ToUpper before interpolation).
+	touches := client.recentTransportTouches(context.Background(), "clas", "zcl_demo")
+
+	want := []TransportTouch{{
+		Transport: "A4HK900100", Type: "K", Status: "R", Owner: "TESTUSER", Date: "2026-08-03",
+	}}
+	if !reflect.DeepEqual(touches, want) {
+		t.Fatalf("touches = %+v, want task collapsed to parent request %+v", touches, want)
+	}
+
+	if len(mock.requests) != 2 {
+		t.Fatalf("requests = %d, want 2 (E071 then E070 RunQuery)", len(mock.requests))
+	}
+	for i, req := range mock.requests {
+		if !strings.Contains(req.URL.Path, "datapreview/freestyle") {
+			t.Fatalf("request %d path = %s, want datapreview/freestyle", i, req.URL.Path)
+		}
+	}
+	e071SQL := readRequestBody(t, mock.requests[0])
+	if !containsAll(e071SQL, "FROM E071", "PGMID = 'R3TR'", "OBJECT = 'CLAS'", "OBJ_NAME = 'ZCL_DEMO'") {
+		t.Fatalf("E071 SQL %q must filter on R3TR/CLAS/ZCL_DEMO", e071SQL)
+	}
+	e070SQL := readRequestBody(t, mock.requests[1])
+	if !containsAll(e070SQL, "FROM E070", "'A4HK900100'", "'A4HK900101'") {
+		t.Fatalf("E070 SQL %q must select headers for both E071 transports", e070SQL)
+	}
+}
+
+//nolint:bodyclose // Transport.Request owns and closes every synthetic response body.
+func TestRecentTransportTouchesExcludesOldTransports(t *testing.T) {
+	pinImpactNow(t)
+	client, mock := newImpactTestClient(
+		newMockResponse(http.StatusOK, impactE071OldXML, nil),
+		newMockResponse(http.StatusOK, impactE070OldXML, nil),
+	)
+
+	touches := client.recentTransportTouches(context.Background(), "CLAS", "ZCL_DEMO")
+
+	if len(touches) != 0 {
+		t.Fatalf("touches = %+v, want none (AS4DATE 20260301 is outside the 90-day window)", touches)
+	}
+	if len(mock.requests) != 2 {
+		t.Fatalf("requests = %d, want 2 (the queries must still run; filtering is client-side)", len(mock.requests))
+	}
+}
+
+//nolint:bodyclose // Transport.Request owns and closes every synthetic response body.
+func TestRecentTransportTouchesSkipsWhenFreeSQLBlocked(t *testing.T) {
+	pinImpactNow(t)
+	client, mock := newImpactTestClient() // no responses: any request would 500
+	client.Safety().BlockFreeSQL = true
+
+	touches := client.recentTransportTouches(context.Background(), "CLAS", "ZCL_DEMO")
+
+	if touches != nil {
+		t.Fatalf("touches = %+v, want nil when free SQL is blocked", touches)
+	}
+	if len(mock.requests) != 0 {
+		t.Fatalf("requests = %d, want 0 (BlockFreeSQL must skip before any HTTP call)", len(mock.requests))
+	}
+}
+
+//nolint:bodyclose // Transport.Request owns and closes every synthetic response body.
+func TestComputeWriteImpactIncludesTransportTouches(t *testing.T) {
+	pinImpactNow(t)
+	client, _ := newImpactTestClient(
+		newMockResponse(http.StatusOK, impactUsageXML, nil),
+		newMockResponse(http.StatusOK, impactE071XML, nil),
+		newMockResponse(http.StatusOK, impactE070XML, nil),
+	)
+
+	s := client.ComputeWriteImpact(context.Background(),
+		"/sap/bc/adt/oo/classes/zcl_demo", "ZCL_DEMO", "CLAS", "Z_PKG_A")
+
+	if !s.Available {
+		t.Fatalf("Available = false (%s), want true", s.Unavailable)
+	}
+	if len(s.RecentTransports) != 1 || s.RecentTransports[0].Transport != "A4HK900100" {
+		t.Fatalf("RecentTransports = %+v, want the one collapsed parent request", s.RecentTransports)
+	}
+	if s.Risk != riskHigh {
+		t.Fatalf("Risk = %q, want %q (cross-package spread + transport touch within 90 days)", s.Risk, riskHigh)
+	}
+	if !containsAll(s.Advice, "A4HK900100", "2026-08-03") {
+		t.Fatalf("Advice %q must cite the recent transport and its date", s.Advice)
+	}
+}
+
+//nolint:bodyclose // Transport.Request owns and closes every synthetic response body.
+func TestComputeWriteImpactSurvivesTransportLookupFailure(t *testing.T) {
+	pinImpactNow(t)
+	client, mock := newImpactTestClient(
+		newMockResponse(http.StatusOK, impactUsageXML, nil),
+		newMockResponse(http.StatusInternalServerError, "boom", nil),
+	)
+
+	s := client.ComputeWriteImpact(context.Background(),
+		"/sap/bc/adt/oo/classes/zcl_demo", "ZCL_DEMO", "CLAS", "Z_PKG_A")
+
+	if !s.Available {
+		t.Fatalf("Available = false (%s), want true — a failed E071 lookup degrades to refs-only", s.Unavailable)
+	}
+	if s.Callers != 3 {
+		t.Fatalf("Callers = %d, want 3 from the where-used leg", s.Callers)
+	}
+	if len(s.RecentTransports) != 0 {
+		t.Fatalf("RecentTransports = %+v, want none on query failure", s.RecentTransports)
+	}
+	if s.Risk != riskLow {
+		t.Fatalf("Risk = %q, want %q (refs-only tiering without the transport signal)", s.Risk, riskLow)
+	}
+	if len(mock.requests) != 2 {
+		t.Fatalf("requests = %d, want 2 (usageReferences + the failed E071 attempt)", len(mock.requests))
 	}
 }
