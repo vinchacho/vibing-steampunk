@@ -317,6 +317,10 @@ This allows AI-driven debugging without manual SAP GUI interaction.
 
 | Area | Status |
 |------|--------|
+| Impact-gated writes | 🚧 `feature/impact-gated-writes` worktree — blast-radius summary on update/edit/delete/rename (`impact` block: callers, packages, transport recency, risk tier, agent advice), opt-in block gate with 128-bit confirm tokens; design: [docs/plans/2026-08-15-impact-gated-writes-design.md](docs/plans/2026-08-15-impact-gated-writes-design.md) |
+| ActivateMultiple | ✅ Batch activation in one ADT request with mutual-dependency resolution (Eclipse parity); `ActivatePackage` rewired to use it; hyperfocused route `ACTIVATE_MULTI` (upstream PR #150, cherry-picked 2026-08-15) |
+| Write-safety & session hardening | ✅ Upstream PR #156 cherry-picked 2026-08-15: CSRF fetch stays in the stateful session (supersedes #120/#125), logical `Success=false` fails closed across ExecuteABAP/copy/deploy/rename/DSL/MCP WriteSource, persistent CLI safety flags, installer verification, per-system safety fields; audit: [reports/2026-08-15-002-upstream-vsp-bug-audit.md](reports/2026-08-15-002-upstream-vsp-bug-audit.md) — mocks-verified, live sandbox canary pending |
+| Claude Code plugin (`plugin/`) | ✅ `vsp-abap-developer` — 11 skills (incl. new `bootstrap-system-context` system-profile probe), trigger/scope description formula, Codex manifest; skills tracked + sanitized as of 2026-08-15 |
 | Transport Changelog (v2.39.0) | ✅ `vsp changelog` / `vsp changes` — E070/E070A/E07T-driven package & CR-level change correlation |
 | `cr-config-audit` | ✅ v2a.1 — value-level literal match, L2 SQLite cache, 1-hop transitive reach, DDIC delivery-class filter |
 | RecoverFailedCreate | ✅ MCP primitive + `vsp recover-failed-create` CLI; reconciles partial-create on 5xx |
