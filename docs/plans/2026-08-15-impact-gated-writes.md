@@ -284,6 +284,8 @@ Same pattern as Task 5. Commit `feat(adt): advisory impact on delete and rename`
 
 ### Task 10: Docs, skills, counts
 
+**Also (added 2026-08-15, user request): finalize the design docs to as-built state** — update `docs/plans/2026-08-15-impact-gated-writes-design.md` where implementation diverged or sharpened the spec: DeleteObjectWithResult wrapper (MCP-only; internal deletes uninstrumented), origin-bound ctx marker (op+objectURL identity so renames confirm once), canonicalized 128-bit tokens, the checkSafety pre-guard (no impact traffic on policy-refused writes), include/CDS identity derivation, and the delete-window CSRF caveat. The design doc must read as documentation of what shipped, not a proposal.
+
 **Files:**
 - Modify: `README_TOOLS.md` (confirm param note), `CLAUDE.md` (flags table: two new rows; re-derive counts per "Reconciling counts"), `plugin/skills/deploy/SKILL.md` + `plugin/skills/abap-developer/SKILL.md` (one line each: on `impact.risk: high`, read 2–3 key callers and run tests on affected packages before proceeding), design pointer report `reports/2026-08-15-004-impact-gated-writes-design.md` (metadata header + link + 5-line summary)
 - **Sanitize scan** staged diff per CLAUDE.md before commit.
