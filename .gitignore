@@ -109,3 +109,4 @@ quickjs.zip
 # Session worktrees and personal agent skills (never commit)
 .claude/worktrees/
 .agents/
+.worktrees/
