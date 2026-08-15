@@ -1,6 +1,6 @@
 ---
 name: vsp-knowledge
-description: Core SAP/VSP domain knowledge for ABAP development. Use when working with VSP MCP tools — provides best practices, workflow patterns, gotchas, and safety guidance. Triggers on ABAP development, SAP system interaction, or VSP tool usage.
+description: "Core SAP/VSP domain knowledge for ABAP development: method-level operation patterns, safety guidance, SQL gotchas, object-type prerequisites. Use as background whenever working with VSP MCP tools — especially before first writes to an unfamiliar object type. Triggers: ABAP development, SAP system interaction, VSP tool usage, object types, safety. Scope: reference knowledge — it prescribes how to use tools, not which workflow to run."
 ---
 
 # VSP Development Knowledge

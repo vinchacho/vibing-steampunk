@@ -1,6 +1,6 @@
 ---
 name: status
-description: Show VSP system info, available features, and dependencies
+description: "Show the connected SAP system and VSP session state: system ID and release, detected features, VSP mode, safety restrictions, ZADT_VSP availability. Use for 'what system am I on', 'what can vsp do here', 'is debugging available', 'show status'. Triggers: status, system info, features, mode. Scope: a read-only snapshot — for a persisted profile that other skills reuse, run bootstrap-system-context."
 ---
 
 Display a comprehensive status report of the connected SAP system.

@@ -1,6 +1,6 @@
 ---
 name: rca
-description: Start root cause analysis for a runtime error or dump
+description: "Structured root-cause analysis for a runtime error, dump, or failed job: collect evidence first (dumps, traces, version history, recent transports), then hypothesize, then verify on the system. Use for 'why did this fail in prod', 'analyze this dump', 'root cause', 'RCA for the incident'. Triggers: root cause, RCA, incident, production error, failed job. Scope: an evidence-driven workflow producing a findings write-up — free-form interactive debugging is abap-debugger."
 ---
 
 Investigate a runtime error using the 4-phase Root Cause Analysis workflow.

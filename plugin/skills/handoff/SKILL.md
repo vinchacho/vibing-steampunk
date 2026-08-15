@@ -1,6 +1,6 @@
 ---
 name: handoff
-description: Generate a structured handoff document for context reset or session transfer
+description: "Generate a structured handoff document — current state, decisions made, open items, exact next steps — for a context reset or transferring work to another session or developer. Use for 'write a handoff', 'summarize where we are', 'prepare context for the next session'. Triggers: handoff, context reset, session summary. Scope: documentation only — makes no system changes."
 ---
 
 Generate a structured handoff document that captures the current session state. This enables clean context resets — a fresh agent session can pick up exactly where this one left off.

@@ -1,7 +1,9 @@
 ---
 name: deploy
-description: Deploy ABAP objects with full quality gates (syntax, activate, test, transport)
+description: "Deploy ABAP objects through full quality gates: syntax check, activation (ActivateMultiple for mutually dependent objects), unit tests, ATC, transport assignment. Use for 'deploy X', 'release this', 'move it to QA', 'add to a transport'. Triggers: deploy, release, transport, quality gate. Scope: the gated deployment workflow — editing without gates is abap-developer; running checks alone is test."
 ---
+
+> **System profile:** before generating release-specific syntax or proposing transport/feature workflows, read `.claude/vsp-system-profile.md` if it exists; if it's missing and the task is release- or feature-sensitive, run the **bootstrap-system-context** skill first.
 
 Deploy an ABAP object through the full quality gate pipeline.
 
