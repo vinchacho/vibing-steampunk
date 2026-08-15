@@ -10,13 +10,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/cobra"
 	embedded "github.com/vinchacho/vibing-steampunk/embedded/abap"
 	"github.com/vinchacho/vibing-steampunk/embedded/deps"
 	installer "github.com/vinchacho/vibing-steampunk/internal/install"
 	"github.com/vinchacho/vibing-steampunk/pkg/adt"
 	"github.com/vinchacho/vibing-steampunk/pkg/ctxcomp"
 	"github.com/vinchacho/vibing-steampunk/pkg/graph"
-	"github.com/spf13/cobra"
 )
 
 // --- source subcommands ---
@@ -482,12 +482,14 @@ func init() {
 
 	// Source write flags
 	sourceWriteCmd.Flags().String("transport", "", "Transport request number")
+	sourceWriteCmd.Flags().String("confirm-impact", "", confirmImpactFlagHelp)
 
 	// Source edit flags
 	sourceEditCmd.Flags().String("old", "", "String to find (required)")
 	sourceEditCmd.Flags().String("new", "", "Replacement string (required)")
 	sourceEditCmd.Flags().Bool("replace-all", false, "Replace all occurrences")
 	sourceEditCmd.Flags().String("transport", "", "Transport request number")
+	sourceEditCmd.Flags().String("confirm-impact", "", confirmImpactFlagHelp)
 	_ = sourceEditCmd.MarkFlagRequired("old")
 	_ = sourceEditCmd.MarkFlagRequired("new")
 
@@ -513,6 +515,7 @@ func init() {
 
 	// Deploy flags
 	deployCmd.Flags().String("transport", "", "Transport request number")
+	deployCmd.Flags().String("confirm-impact", "", confirmImpactFlagHelp)
 
 	// Transport list flags
 	transportListCmd.Flags().String("user", "", "Filter by user (default: current user)")
@@ -1372,6 +1375,41 @@ func printTRBoundariesMarkdown(report *graph.TransportBoundaryReport, details bo
 	}
 }
 
+// confirmImpactFlagHelp documents the process-lifetime caveat: impact
+// tokens are minted and kept in the refusing process's memory, so a
+// one-shot CLI run (a fresh process) can never present a token that a
+// previous run issued.
+const confirmImpactFlagHelp = "Impact-gate confirmation token (impact-confirm-...) from a prior blocked attempt. The token store is per-process, so in today's one-shot CLI usage a fresh run can never redeem a token issued by a previous run — the flag exists for interface parity and a future long-running serve mode. Under a block-mode gate, lower --impact-gate for the invocation instead."
+
+// confirmImpactContext returns the command context, wrapped with the
+// --confirm-impact token when the flag is set.
+func confirmImpactContext(cmd *cobra.Command) context.Context {
+	ctx := context.Background()
+	if token, _ := cmd.Flags().GetString("confirm-impact"); token != "" {
+		ctx = adt.WithImpactConfirm(ctx, token)
+	}
+	return ctx
+}
+
+// formatImpactLine renders the one-line blast-radius summary attached to
+// write results when --impact-gate is advise or block. Empty for nil.
+func formatImpactLine(impact *adt.ImpactSummary) string {
+	if impact == nil {
+		return ""
+	}
+	if !impact.Available {
+		return fmt.Sprintf("impact: %s — where-used unavailable (%s)", impact.Risk, impact.Unavailable)
+	}
+	return fmt.Sprintf("impact: %s — %d callers across %d packages", impact.Risk, impact.Callers, len(impact.Packages))
+}
+
+// printImpactLine writes the impact summary line to stderr, if any.
+func printImpactLine(impact *adt.ImpactSummary) {
+	if line := formatImpactLine(impact); line != "" {
+		fmt.Fprintln(os.Stderr, line)
+	}
+}
+
 func runSourceWrite(cmd *cobra.Command, args []string) error {
 	params, err := resolveSystemParams(cmd)
 	if err != nil {
@@ -1396,13 +1434,14 @@ func runSourceWrite(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("no source provided on stdin")
 	}
 
-	ctx := context.Background()
+	ctx := confirmImpactContext(cmd)
 	result, err := client.WriteSource(ctx, objType, name, string(source), &adt.WriteSourceOptions{
 		Transport: transport,
 	})
 	if err != nil {
 		return fmt.Errorf("write failed: %w", err)
 	}
+	printImpactLine(result.Impact)
 
 	if result.Success {
 		fmt.Fprintf(os.Stderr, "%s %s %s\n", result.Mode, result.ObjectType, result.ObjectName)
@@ -1450,7 +1489,7 @@ func runSourceEdit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("unsupported object type: %s (supported: CLAS, PROG, INTF)", objType)
 	}
 
-	ctx := context.Background()
+	ctx := confirmImpactContext(cmd)
 	result, err := client.EditSourceWithOptions(ctx, objectURL, oldStr, newStr, &adt.EditSourceOptions{
 		ReplaceAll:  replaceAll,
 		SyntaxCheck: true,
@@ -1459,6 +1498,7 @@ func runSourceEdit(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("edit failed: %w", err)
 	}
+	printImpactLine(result.Impact)
 
 	if result.Success {
 		fmt.Fprintf(os.Stderr, "Edited %s (%d replacement(s))\n", result.ObjectName, result.MatchCount)
@@ -2905,11 +2945,14 @@ func runDeploy(cmd *cobra.Command, args []string) error {
 	packageName := strings.ToUpper(args[1])
 	transport, _ := cmd.Flags().GetString("transport")
 
-	ctx := context.Background()
+	ctx := confirmImpactContext(cmd)
 	result, err := client.DeployFromFile(ctx, filePath, packageName, transport)
 	if err != nil {
 		return fmt.Errorf("deploy failed: %w", err)
 	}
+	// DeployResult carries no advisory Impact block (only the four
+	// workflow results do); a block-mode refusal still surfaces above
+	// as an error carrying the impact-confirm token.
 
 	if result.Success {
 		action := "Updated"

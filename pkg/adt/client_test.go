@@ -85,19 +85,32 @@ func TestClient_SearchObject(t *testing.T) {
 
 func TestClient_CheckObjectPackageSafety_NormalizesObjectURLs(t *testing.T) {
 	tests := []struct {
-		name      string
-		objectURL string
-		searchURI string
+		name        string
+		objectURL   string
+		searchURI   string
+		wantQueried string
 	}{
 		{
-			name:      "source main URL resolves to parent object",
-			objectURL: "/sap/bc/adt/programs/programs/ZTEST/source/main",
-			searchURI: "/sap/bc/adt/programs/programs/ztest",
+			name:        "source main URL resolves to parent object",
+			objectURL:   "/sap/bc/adt/programs/programs/ZTEST/source/main",
+			searchURI:   "/sap/bc/adt/programs/programs/ztest",
+			wantQueried: "ZTEST",
 		},
 		{
-			name:      "class include URL resolves to parent class",
-			objectURL: "/sap/bc/adt/oo/classes/ZCL_TEST/includes/testclasses",
-			searchURI: "/sap/bc/adt/oo/classes/zcl_test",
+			name:        "class include URL resolves to parent class",
+			objectURL:   "/sap/bc/adt/oo/classes/ZCL_TEST/includes/testclasses",
+			searchURI:   "/sap/bc/adt/oo/classes/zcl_test",
+			wantQueried: "ZCL_TEST",
+		},
+		{
+			// Program includes are standalone TADIR objects: the URL must
+			// normalize to the include itself, not to the bare
+			// "/sap/bc/adt/programs" collection (whose last segment,
+			// "PROGRAMS", was the searched name pre-fix).
+			name:        "program include URL resolves to the include object",
+			objectURL:   "/sap/bc/adt/programs/includes/ZINC/source/main",
+			searchURI:   "/sap/bc/adt/programs/includes/zinc",
+			wantQueried: "ZINC",
 		},
 	}
 
@@ -116,6 +129,18 @@ func TestClient_CheckObjectPackageSafety_NormalizesObjectURLs(t *testing.T) {
 
 			if err := client.checkObjectPackageSafety(context.Background(), tt.objectURL); err != nil {
 				t.Fatalf("checkObjectPackageSafety failed: %v", err)
+			}
+
+			// The package lookup must search for the normalized object's own
+			// name — this is what discriminates the include-URL grammars.
+			queried := ""
+			for _, req := range mock.requests {
+				if strings.Contains(req.URL.Path, "search") {
+					queried = req.URL.Query().Get("query")
+				}
+			}
+			if queried != tt.wantQueried {
+				t.Fatalf("search query = %q, want %q", queried, tt.wantQueried)
 			}
 		})
 	}

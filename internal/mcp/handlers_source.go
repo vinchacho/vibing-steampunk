@@ -71,6 +71,9 @@ func (s *Server) routeSourceAction(ctx context.Context, action, objectType, obje
 				if v := getStringParam(params, "method"); v != "" {
 					args["method"] = v
 				}
+				if v := getStringParam(params, "confirm"); v != "" {
+					args["confirm"] = v
+				}
 				return s.callHandler(ctx, s.handleWriteSource, args)
 			}
 		case "EDITSOURCE":
@@ -150,6 +153,7 @@ func (s *Server) registerWriteSource() {
 		mcp.WithString("method",
 			mcp.Description("For CLAS only: update only this method (source must be METHOD...ENDMETHOD block). Method must already exist in the class."),
 		),
+		confirmParam(),
 	), s.handleWriteSource)
 }
 
@@ -240,6 +244,7 @@ func (s *Server) handleWriteSource(ctx context.Context, request mcp.CallToolRequ
 		opts.Mode = adt.WriteSourceMode(mode)
 	}
 
+	ctx = applyImpactConfirm(ctx, request)
 	result, err := s.adtClient.WriteSource(ctx, objectType, name, source, opts)
 	if err != nil {
 		return newToolResultError(fmt.Sprintf("WriteSource failed: %v", err)), nil
@@ -331,6 +336,7 @@ func (s *Server) registerImportFromFile() {
 		mcp.WithString("transport",
 			mcp.Description("Transport request number"),
 		),
+		confirmParam(),
 	), s.handleDeployFromFile) // Reuse existing handler
 }
 

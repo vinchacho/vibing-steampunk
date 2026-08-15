@@ -8,11 +8,13 @@
 
 **Tech Stack:** Go; existing `FindReferences` (ADT usageReferences), `RunQuery` (E071/E070), mock-transport test pattern from `pkg/adt/devtools_activation_test.go` / `http_test.go`.
 
-**Design:** [2026-08-15-impact-gated-writes-design.md](2026-08-15-impact-gated-writes-design.md)
+**Design:** [2026-08-15-impact-gated-writes-design.md](2026-08-15-impact-gated-writes-design.md) (rewritten to as-built state in Task 10)
+
+**Status:** All tasks 1–11 done ✅ (see per-task marks and As-built notes). Remaining follow-up: the manual sandbox canary for the guaranteed block path (see Task 11 as-built note).
 
 ---
 
-### Task 1: ImpactSummary type + risk tiering (pure logic)
+### Task 1: ImpactSummary type + risk tiering (pure logic) ✅
 
 **Files:**
 - Create: `pkg/adt/impact.go`
@@ -119,7 +121,7 @@ func impactAdvice(s *ImpactSummary) string { /* per-tier fmt.Sprintf naming call
 
 ---
 
-### Task 2: ComputeWriteImpact — where-used leg (mocked HTTP)
+### Task 2: ComputeWriteImpact — where-used leg (mocked HTTP) ✅
 
 **Files:**
 - Modify: `pkg/adt/impact.go`
@@ -145,8 +147,18 @@ func (c *Client) ComputeWriteImpact(ctx context.Context, objectURL, objectName, 
 	}
 	s.Available = true
 	pkgs := map[string]bool{}
+	seen := map[string]bool{}
 	for _, r := range refs {
-		if r.Name == objectName { continue } // self-reference
+		if !r.IsResult { continue } // structural grouping row, not a usage (same filter as AnalyzeCDSImpact)
+		// Self-exclusion by URI, not name: name matching would also drop a
+		// genuine same-named caller of a different type.
+		if r.URI != "" && strings.EqualFold(r.URI, objectURL) { continue }
+		// Dedupe on URI: an object reached via multiple includes counts once.
+		// Rows without a URI can't be correlated — count each.
+		if uri := strings.ToLower(r.URI); uri != "" {
+			if seen[uri] { continue }
+			seen[uri] = true
+		}
 		s.Callers++
 		if r.PackageName != "" {
 			pkgs[r.PackageName] = true
@@ -155,6 +167,7 @@ func (c *Client) ComputeWriteImpact(ctx context.Context, objectURL, objectName, 
 	}
 	for p := range pkgs { s.Packages = append(s.Packages, p) }
 	sort.Strings(s.Packages)
+	if len(s.Packages) > 1 { s.CrossPackage = true } // 2+ caller packages is cross-package even when ownPackage is ""
 	s.RecentTransports = c.recentTransportTouches(ctx, tadirType, objectName) // Task 3; returns nil for now
 	s.Risk = classifyImpactRisk(s)
 	s.Advice = impactAdvice(s)
@@ -168,7 +181,7 @@ Stub `recentTransportTouches` returning nil so this task compiles.
 
 ---
 
-### Task 3: Transport-recency leg (E071→E070 via RunQuery)
+### Task 3: Transport-recency leg (E071→E070 via RunQuery) ✅
 
 **Files:**
 - Modify: `pkg/adt/impact.go`
@@ -184,7 +197,7 @@ Stub `recentTransportTouches` returning nil so this task compiles.
 
 ---
 
-### Task 4: Gate config plumbing
+### Task 4: Gate config plumbing ✅
 
 **Files:**
 - Modify: `pkg/adt/safety.go` (struct + validation), `pkg/config/systems.go` (fields `impact_gate`, `impact_threshold` — follow the safety-fields block added by PR #156 at `SystemConfig`), `cmd/vsp/main.go` (persistent flags `--impact-gate`, `--impact-threshold`, env `SAP_IMPACT_GATE`, `SAP_IMPACT_THRESHOLD` — register exactly where the PR-#156 safety flags are declared so propagation-to-subcommands is inherited)
@@ -194,7 +207,7 @@ Stub `recentTransportTouches` returning nil so this task compiles.
 
 ---
 
-### Task 5: Advisory wiring — WriteSource/EditSource paths
+### Task 5: Advisory wiring — WriteSource/EditSource paths ✅
 
 **Files:**
 - Modify: `pkg/adt/mutation_gate.go` (ctx marker), `pkg/adt/workflows_source.go` (compute at :261 area — the outer site that already calls `withMutationPackageChecked`; add `Impact *ImpactSummary \`json:"impact,omitempty"\`` to `WriteSourceResult` at :159), `pkg/adt/workflows_edit.go` (same at :163 / `EditSourceResult` :12)
@@ -221,7 +234,7 @@ func impactFromContext(ctx context.Context) *ImpactSummary {
 
 ---
 
-### Task 6: Advisory wiring — delete and rename paths
+### Task 6: Advisory wiring — delete and rename paths ✅
 
 **Files:**
 - Modify: `pkg/adt/crud.go` (outer sites :473 and :1207), `internal/mcp/handlers_crud.go:530` (replace the bare `"Object deleted successfully"` string with a small `DeleteResult{Success, Object, Impact}` marshaled like other handlers)
@@ -231,7 +244,7 @@ Same pattern as Task 5. Commit `feat(adt): advisory impact on delete and rename`
 
 ---
 
-### Task 7: Confirm-token store
+### Task 7: Confirm-token store ✅
 
 **Files:**
 - Create: `pkg/adt/impact_confirm.go`
@@ -239,13 +252,13 @@ Same pattern as Task 5. Commit `feat(adt): advisory impact on delete and rename`
 
 **Step 1: Failing tests:** issue → validate consumes (second use fails); expiry (inject clock var) → invalid; token bound to objectURL+op (token for update of A rejected for delete of A).
 
-**Step 3: Implementation:** `impactTokenStore` struct (map + `sync.Mutex`) on `Client`; `IssueImpactToken(objectURL, op string) string` (`"impact-confirm-" + 8 hex from crypto/rand`), `consumeImpactToken(objectURL, op, token string) bool`; 10-minute TTL; opportunistic sweep on issue.
+**Step 3: Implementation:** `impactTokenStore` struct (map + `sync.Mutex`) on `Client`; `IssueImpactToken(objectURL, op string) string` (`"impact-confirm-" + 32 hex (16 bytes) from crypto/rand`), `consumeImpactToken(objectURL, op, token string) bool`; 10-minute TTL; opportunistic sweep on issue.
 
 **Commit:** `feat(adt): impact confirmation tokens`.
 
 ---
 
-### Task 8: Block mode — checkMutation step 4
+### Task 8: Block mode — checkMutation step 4 ✅
 
 **Files:**
 - Modify: `pkg/adt/mutation_gate.go` (`checkMutation` :89 — after transportable-edit check), `pkg/adt/impact.go` (render block error text per design §Confirmation flow)
@@ -255,21 +268,33 @@ Same pattern as Task 5. Commit `feat(adt): advisory impact on delete and rename`
 
 **Step 3: Implement:** step 4 reads `impactFromContext(ctx)`; exported `WithImpactConfirm(ctx, token)` ctx setter; blocked error type `*ImpactBlockedError` with `Summary` and `Token` fields, `Error()` renders the design's text.
 
+**Rename/multi-step constraint (from Task 6 review):** RenameObject stashes the OLD object's summary in ctx before its OpDelete gate, and the marker is inherited by the OpCreate/UpdateSource/DeleteObject sub-steps. Step 4 enforcement MUST bind to the (op, objectURL) identity of the summary — i.e. only gate when checkMutation's own (m.Op, m.ObjectURL) matches the stashed summary's origin — or the rename path must strip/rescope the marker after the first gate. Otherwise a confirmed high-risk rename consumes its token at the OpDelete gate and re-blocks un-confirmably at sub-step gates. To make the identity check implementable, extend the `withImpactComputed` marker to carry its origin op+URL alongside the summary (e.g. a ctx value of {summary, op, objectURL} — implementable in Task 8; the Task 5/6 call sites only gain the two extra fields). Add a rename-under-block test to prove a single confirm suffices for the whole rename.
+
+**As-built (Task 8b):** the four-site marker design left verified block-mode bypasses — checkImpactGate only fires when a marker was stashed, and raw `Client.UpdateSource` (expert UpdateSource tool, hyperfocused UPDATE_SOURCE route), DeployZip phase 2, Create/Update/DeployFromFile, dsl.Import, and WriteProgram/WriteClass all reach UpdateSource without one. Closed by primitive-level block enforcement in `Client.UpdateSource` itself: in gate `block`, when no marker is in ctx and the local op-type check would pass, it computes `computeURLWriteImpact` and stashes the marker with its own (OpUpdate, sourceURL) origin, so checkImpactGate evaluates normally and every wrapper inherits the refusal (and honors a `WithImpactConfirm` retry). BLOCK MODE ONLY — advise mode does not compute at the primitive (no result struct to attach a summary to); advisory coverage remains at the four workflow sites. `Client.DeleteObject` stays deliberately ungated at the primitive: its markerless callers are error-recovery/cleanup paths (reconcileFailedCreate, ExecuteABAP rollback, rename step 6) where a block — e.g. risk `unknown` under threshold `medium` during a where-used outage — would strand zombie objects; the user-facing delete goes through DeleteObjectWithResult, which stashes the marker. Rename step 6 must keep calling raw DeleteObject (switching to DeleteObjectWithResult would restash an unconfirmed marker over the confirmed origin marker and re-block un-confirmably). Tests: `pkg/adt/impact_gate_test.go` Task 8b section (raw-UpdateSource block+confirm-retry, advise asymmetry, UpdateFromFile/WriteProgram inheritance, medium-tier gating, EditSource confirm-retry, transport status word rendering).
+
+**As-built (Task 8c):** two follow-ups from the Task 8b review. (1) `Client.UpdateClassInclude` gets the same primitive-level block guard as UpdateSource — it issues its own PUT behind its own `checkMutation(OpUpdate, ...)` and is reachable markerless via the expert UpdateClassInclude tool, the hyperfocused routeClassIncludeAction, and UpdateFromFile's class-include branch; canonicalizeObjectURL maps the include URL to the parent class, so EditSource's include path origin-matches unchanged. (2) Create-then-fill workflows (writeSourceCreate, CreateFromFile, CreateAndActivateProgram, CreateClassWithTests, ExecuteABAP's temp program) mark their fill writes with `withImpactCreateFill`, which both primitive guards honor — a just-created object has no callers, and a degraded-mode block would strand a partial create between LOCK and PUT. DeployZip is deliberately NOT exempted: its phase 2 also uploads source to pre-existing objects. Scope note: i18n/UI5 markerless OpUpdate callers are out of scope (no ABAP where-used blast radius). Tests: `pkg/adt/impact_gate_test.go` Task 8c section, `pkg/adt/workflows_impact_test.go` create-fill section.
+
 **Commit:** `feat(adt): impact gate block mode`.
 
 ---
 
-### Task 9: Surface the confirm parameter (MCP + CLI)
+### Task 9: Surface the confirm parameter (MCP + CLI) ✅
 
 **Files:**
 - Modify: `internal/mcp/tools_register.go` (optional `confirm` string on WriteSource, EditSource, DeleteObject, Rename tools), `internal/mcp/handlers_source.go` / `handlers_crud.go` (read `confirm`, apply `adt.WithImpactConfirm`), `internal/mcp/handlers_universal.go` (pass `params.confirm` through — params already flow to handlers, verify only), `cmd/vsp/cli.go` (`--confirm-impact` on the source write / delete / rename commands; print one-line risk summary on gated ops when gate ≠ off)
 - Test: `internal/mcp/handlers_source_test.go` (added by PR #156 — extend: blocked write returns MCP tool error containing the token; retry with `confirm` arg succeeds against mock)
 
+**Addition (from Task 8b):** the `confirm` param must ALSO be registered on the UpdateSource, UpdateClassInclude, ImportFromFile, DeployZip, WriteProgram, WriteClass, InstallZADTVSP, and InstallDummyTest tools — any tool that can surface an ImpactBlockedError (all of them funnel into the primitive-gated `Client.UpdateSource` or `Client.UpdateClassInclude`), so every block response has a retry path with the token. (InstallZADTVSP and InstallDummyTest were missing from this list originally — both upsert via WriteSource, so their re-install/update path is primitive-gated; added in the Task 9 review follow-up.)
+
+**As-built deviations (Task 9, both justified):** (1) The plan named `cmd/vsp/cli.go` flags on "source write / delete / rename commands" — no CLI delete or rename commands exist, so `--confirm-impact` landed in `cmd/vsp/devops.go` on `source write`, `source edit`, and `deploy` (the three CLI commands that can reach the gated primitives); `source write`/`source edit` additionally print a one-line advisory impact summary to stderr. The flag's help documents that the token store is per-process, so one-shot CLI runs can never redeem a token from a previous run — the flag is interface parity for a future serve mode; block-mode CLI operators lower `--impact-gate` for the invocation instead. (2) `DeployFromFile` was added to the confirm tool list (it reaches the gated primitives via `UpdateFromFile` but appeared in neither the base list nor the Task 8b addition) — the final list is 13 tools: WriteSource, EditSource, UpdateSource, DeleteObject, RenameObject, UpdateClassInclude, WriteProgram, WriteClass, DeployFromFile, ImportFromFile, DeployZip, InstallZADTVSP, InstallDummyTest.
+
 **Commit:** `feat(mcp,cli): impact confirm parameter`.
 
 ---
 
-### Task 10: Docs, skills, counts
+### Task 10: Docs, skills, counts ✅
+
+**Also (added 2026-08-15, user request): finalize the design docs to as-built state** — update `docs/plans/2026-08-15-impact-gated-writes-design.md` where implementation diverged or sharpened the spec: DeleteObjectWithResult wrapper (MCP-only; internal deletes uninstrumented), origin-bound ctx marker (op+objectURL identity so renames confirm once), canonicalized 128-bit tokens, the checkSafety pre-guard (no impact traffic on policy-refused writes), include/CDS identity derivation, and the delete-window CSRF caveat. The design doc must read as documentation of what shipped, not a proposal.
 
 **Files:**
 - Modify: `README_TOOLS.md` (confirm param note), `CLAUDE.md` (flags table: two new rows; re-derive counts per "Reconciling counts"), `plugin/skills/deploy/SKILL.md` + `plugin/skills/abap-developer/SKILL.md` (one line each: on `impact.risk: high`, read 2–3 key callers and run tests on affected packages before proceeding), design pointer report `reports/2026-08-15-004-impact-gated-writes-design.md` (metadata header + link + 5-line summary)
@@ -279,7 +304,7 @@ Same pattern as Task 5. Commit `feat(adt): advisory impact on delete and rename`
 
 ---
 
-### Task 11: Integration test + full verification
+### Task 11: Integration test + full verification ✅
 
 **Files:**
 - Modify: `pkg/adt/integration_test.go` (tag `integration`): with gate `advise`, edit a `$TMP` object, assert the impact block exists and `available` is true or reason states why.
@@ -288,5 +313,16 @@ Same pattern as Task 5. Commit `feat(adt): advisory impact on delete and rename`
 - `go build ./... && go vet ./... && go test ./...` → all green
 - Manual (sandbox): `--impact-gate advise` → edit object with known callers → `impact` block in response; `--impact-gate block --impact-threshold medium` → block → token retry succeeds
 - `grep -c 'shouldRegister("' internal/mcp/tools_register.go` unchanged (no new tools, only params)
+- Confirm on the live system that object-level usageReferences result rows carry `isResult=true` (the counting loop skips `isResult="false"` grouping rows)
+
+**As-built:** Landed as a new `pkg/adt/integration_impact_test.go` (same `//go:build integration` tag; a split-out file follows the `browser_auth_integration_test.go` precedent, and the tests skip via `getIntegrationClient` when `SAP_*` env is absent). Names follow the repo's `TestIntegration_*` convention, so the run filter is `-run 'TestIntegration_Impact'`.
+
+*What the live suite covers:*
+- `TestIntegration_ImpactAdvisorySummary` (gate `advise`): WriteSource create carries NO impact block (create exemption); the subsequent update carries one — either `available: true` with a sane tier, or a stated `unavailable_reason` with risk `unknown`; the summary is logged. Then the live usageReferences round-trip: `FindReferences(objectURL, 0, 0)` on the created object, with the **isResult assumption probe** — rows are tallied by `isResult`; if rows exist and none carry `isResult=true` the test logs loudly (assumption probe, not a hard failure). A fresh caller-less object can return zero rows, so an inconclusive probe falls back to a read-only probe of `CL_ABAP_STRUCTDESCR` (same non-fatal timeout tolerance as `TestIntegration_FindReferences`).
+- `TestIntegration_ImpactBlockConfirmRoundTrip` (gate `block`, threshold `medium` — the strictest setting): the create path succeeding under block proves the create-fill exemption live; the update on the fresh 0-caller object must PROCEED (risk `low` is not gated even at `medium`) — the **no-false-positive** half of block coverage, with a hard failure if a fresh object blocks at any risk other than `unknown`. When the live where-used lookup degrades, risk `unknown` IS gated at `medium` (documented fail-closed), and the test then exercises the real block → token → `WithImpactConfirm` retry round trip. Finally, the confirmation-token store is verified deterministically on the live client instance, in-process with no SAP traffic: issue shape, wrong-token reject, consume via a canonically equivalent `/source/main` URL, single-use.
+
+*Deferred to the sandbox canary (manual):* a **guaranteed** block on a genuinely high-risk object — it needs an object with ≥ 25 callers or a recent transport touch, which cannot be assumed to exist on an arbitrary test system, and writing to a real high-caller object to manufacture one is exactly what the gate prevents. The "Manual (sandbox)" line above remains the canary's script, to be run against a seeded fixture package.
+
+*Verification run (2026-08-15, no live system — per scope):* `go build ./... && go vet ./... && go test ./... -count=1` all green; `go vet -tags=integration ./pkg/adt/` and `go build -tags=integration ./pkg/adt/` clean; `go test -tags=integration -list '.*' ./pkg/adt/` lists both new tests without executing them; `grep -c 'shouldRegister('` = 154 (unchanged); new file gofmt-clean.
 
 **Commit:** `test(adt): impact gate integration coverage`.

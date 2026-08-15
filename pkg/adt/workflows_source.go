@@ -166,6 +166,7 @@ type WriteSourceResult struct {
 	SyntaxErrors []SyntaxCheckResult `json:"syntaxErrors,omitempty"`
 	Activation   *ActivationResult   `json:"activation,omitempty"`
 	TestResults  *UnitTestResult     `json:"testResults,omitempty"` //nolint:misspell // CLAS is the SAP ADT object type.
+	Impact       *ImpactSummary      `json:"impact,omitempty"`
 	Message      string              `json:"message,omitempty"`
 }
 
@@ -255,6 +256,21 @@ func (c *Client) WriteSource(ctx context.Context, objectType, name, source strin
 	} else {
 		mutation.ObjectURL = writeSourceObjectURL(objectType, name)
 	}
+	// Advisory blast radius: computed once per logical write, at the same
+	// point as the package pre-check — before the lock is acquired, so no
+	// stateless call lands between LOCK and PUT. Update path only: a
+	// brand-new object has no callers to analyze. objectType here is the
+	// bare TADIR type ("PROG"/"CLAS"/...); opts.Package is a best-effort
+	// own-package hint (usually empty on updates, which is fine). Skipped
+	// when the local op-type policy would refuse the write anyway (e.g.
+	// read-only mode): checkSafety is local and idempotent, and checkMutation
+	// below re-runs it to produce the refusal error.
+	var impact *ImpactSummary
+	if actualMode != WriteModeCreate && impactGateActive(&c.config.Safety) &&
+		c.checkSafety(mutation.Op, mutation.OpName) == nil {
+		impact = c.ComputeWriteImpact(ctx, mutation.ObjectURL, name, objectType, opts.Package)
+		ctx = withImpactComputed(ctx, impact, mutation.Op, mutation.ObjectURL)
+	}
 	if err := c.checkMutation(ctx, mutation); err != nil {
 		return nil, err
 	}
@@ -263,9 +279,12 @@ func (c *Client) WriteSource(ctx context.Context, objectType, name, source strin
 	// Execute create or update workflow
 	if actualMode == WriteModeCreate {
 		return c.writeSourceCreate(ctx, objectType, name, source, opts)
-	} else {
-		return c.writeSourceUpdate(ctx, objectType, name, source, opts)
 	}
+	updateResult, err := c.writeSourceUpdate(ctx, objectType, name, source, opts)
+	if updateResult != nil {
+		updateResult.Impact = impact
+	}
+	return updateResult, err
 }
 
 func writeSourceObjectURL(objectType, name string) string {
@@ -302,6 +321,11 @@ func (c *Client) writeSourceObjectExists(ctx context.Context, objectType, name s
 
 // writeSourceCreate handles creation workflow
 func (c *Client) writeSourceCreate(ctx context.Context, objectType, name, source string, opts *WriteSourceOptions) (*WriteSourceResult, error) {
+	// Every branch below fills a just-created object (directly or via the
+	// delegated Create*/WriteClass workflows) — exempt the fill writes from
+	// the primitive impact guards (see withImpactCreateFill).
+	ctx = withImpactCreateFill(ctx)
+
 	result := &WriteSourceResult{
 		ObjectType: objectType,
 		ObjectName: name,

@@ -38,6 +38,8 @@ func (s *Server) routeInstallAction(ctx context.Context, action, objectType, obj
 // --- Install Handlers ---
 
 func (s *Server) handleInstallDummyTest(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	ctx = applyImpactConfirm(ctx, request)
+
 	const (
 		testPackage   = "$ZADT_INSTALL_TEST"
 		testInterface = "ZIF_DUMMY_TEST"
@@ -302,6 +304,8 @@ ENDCLASS.`
 }
 
 func (s *Server) handleInstallZADTVSP(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	ctx = applyImpactConfirm(ctx, request)
+
 	// Parse parameters
 	packageName := "$ZADT_VSP"
 	if pkg, ok := request.GetArguments()["package"].(string); ok && pkg != "" {

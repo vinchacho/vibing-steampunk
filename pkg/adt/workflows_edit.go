@@ -19,6 +19,7 @@ type EditSourceResult struct {
 	SyntaxErrors   []string          `json:"syntaxErrors,omitempty"`
 	SyntaxWarnings []string          `json:"syntaxWarnings,omitempty"`
 	Activation     *ActivationResult `json:"activation,omitempty"`
+	Impact         *ImpactSummary    `json:"impact,omitempty"`
 	Message        string            `json:"message,omitempty"`
 	Method         string            `json:"method,omitempty"` // Method name if method-level edit
 }
@@ -151,6 +152,19 @@ func (c *Client) EditSourceWithOptions(ctx context.Context, objectURL, oldString
 		opts = &EditSourceOptions{SyntaxCheck: true}
 	}
 
+	// Advisory blast radius: computed once, before the policy gate and lock
+	// acquisition (never between LOCK and PUT). EditSource always targets an
+	// existing object, so there is no create-path exemption here. Skipped
+	// when the local op-type policy would refuse the write anyway (e.g.
+	// read-only mode): checkSafety is local and idempotent, and checkMutation
+	// below re-runs the same OpUpdate/"EditSource" check to produce the
+	// refusal error.
+	var impact *ImpactSummary
+	if impactGateActive(&c.config.Safety) && c.checkSafety(OpUpdate, "EditSource") == nil {
+		impact = c.computeURLWriteImpact(ctx, objectURL)
+		ctx = withImpactComputed(ctx, impact, OpUpdate, objectURL)
+	}
+
 	// Unified mutation policy gate (op type + package + transport)
 	if err := c.checkMutation(ctx, MutationContext{
 		Op:        OpUpdate,
@@ -168,6 +182,7 @@ func (c *Client) EditSourceWithOptions(ctx context.Context, objectURL, oldString
 		ObjectURL: objectURL,
 		OldString: oldString,
 		NewString: newString,
+		Impact:    impact,
 	}
 
 	// Extract object name from URL for error messages

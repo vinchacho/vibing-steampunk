@@ -12,12 +12,13 @@ import (
 
 // RenameObjectResult contains the result of renaming an object.
 type RenameObjectResult struct {
-	OldName    string   `json:"oldName"`
-	NewName    string   `json:"newName"`
-	ObjectType string   `json:"objectType"`
-	Success    bool     `json:"success"`
-	Message    string   `json:"message,omitempty"`
-	Errors     []string `json:"errors,omitempty"`
+	OldName    string         `json:"oldName"`
+	NewName    string         `json:"newName"`
+	ObjectType string         `json:"objectType"`
+	Success    bool           `json:"success"`
+	Message    string         `json:"message,omitempty"`
+	Errors     []string       `json:"errors,omitempty"`
+	Impact     *ImpactSummary `json:"impact,omitempty"`
 }
 
 // RenameObject renames an ABAP object by creating a copy with the new name and deleting the old one.
@@ -35,6 +36,18 @@ func (c *Client) RenameObject(ctx context.Context, objType CreatableObjectType, 
 	oldURL, err := c.buildObjectURL(objType, oldName)
 	if err != nil {
 		return nil, err
+	}
+
+	// Advisory blast radius, computed on the OLD object: every caller of the
+	// old name breaks when it is deleted, so the old object's callers ARE the
+	// rename's impact. Computed before any policy gate or lock. Skipped when
+	// the local op-type policy would refuse the rename anyway (e.g. read-only
+	// mode): checkSafety is local and idempotent, and the checkMutation below
+	// re-runs the same OpDelete/"RenameObject" check to produce the refusal
+	// error.
+	if impactGateActive(&c.config.Safety) && c.checkSafety(OpDelete, "RenameObject") == nil {
+		result.Impact = c.computeURLWriteImpact(ctx, oldURL)
+		ctx = withImpactComputed(ctx, result.Impact, OpDelete, oldURL)
 	}
 
 	// Unified mutation policy gate for the old object being deleted.
@@ -145,6 +158,13 @@ func (c *Client) RenameObject(ctx context.Context, objType CreatableObjectType, 
 		return result, nil
 	}
 
+	// Latent hazard: this MUST stay the raw DeleteObject, never
+	// DeleteObjectWithResult. The wrapper would recompute the blast radius
+	// and restash a fresh UNCONFIRMED marker over the origin marker whose
+	// confirmation — consumed at this rename's first (OpDelete, oldURL)
+	// gate — is exactly what authorizes this step-6 delete. The restashed
+	// marker shares that origin identity, so the gate would re-block here
+	// un-confirmably, stranding the rename after the new object exists.
 	err = c.DeleteObject(ctx, oldURL, oldLockResult.LockHandle, transport)
 	if err != nil {
 		result.Message = fmt.Sprintf("New object %s created successfully, but failed to delete old object %s: %v. Please delete manually.", newName, oldName, err)

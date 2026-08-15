@@ -8,6 +8,16 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
+// confirmParam is the shared optional `confirm` parameter, registered on
+// every tool that can surface an *adt.ImpactBlockedError (all such tools
+// funnel into the primitive-gated UpdateSource / UpdateClassInclude).
+// Handlers thread it via applyImpactConfirm (server.go).
+func confirmParam() mcp.ToolOption {
+	return mcp.WithString("confirm",
+		mcp.Description("Impact-gate confirmation token from a prior blocked attempt (impact-confirm-...). Retry the identical call with this set."),
+	)
+}
+
 // registerTools registers ADT tools with the MCP server based on mode, disabled groups, and granular config.
 // Mode "focused" registers essential tools.
 // Mode "expert" registers all tools.
@@ -943,6 +953,7 @@ func (s *Server) registerCRUDTools(shouldRegister func(string) bool) {
 			mcp.WithString("transport",
 				mcp.Description("Transport request number (optional for local packages)"),
 			),
+			confirmParam(),
 		), s.handleUpdateSource)
 	}
 
@@ -1114,6 +1125,7 @@ func (s *Server) registerCRUDTools(shouldRegister func(string) bool) {
 			mcp.WithString("transport",
 				mcp.Description("Transport request number (optional for local packages)"),
 			),
+			confirmParam(),
 		), s.handleDeleteObject)
 	}
 
@@ -1229,6 +1241,7 @@ func (s *Server) registerClassIncludeTools(shouldRegister func(string) bool) {
 			mcp.WithString("transport",
 				mcp.Description("Transport request number (optional for local packages)"),
 			),
+			confirmParam(),
 		), s.handleUpdateClassInclude)
 	}
 
@@ -1275,6 +1288,7 @@ func (s *Server) registerWorkflowTools(shouldRegister func(string) bool) {
 			mcp.WithString("transport",
 				mcp.Description("Transport request number (optional for local packages)"),
 			),
+			confirmParam(),
 		), s.handleWriteProgram)
 	}
 
@@ -1292,6 +1306,7 @@ func (s *Server) registerWorkflowTools(shouldRegister func(string) bool) {
 			mcp.WithString("transport",
 				mcp.Description("Transport request number (optional for local packages)"),
 			),
+			confirmParam(),
 		), s.handleWriteClass)
 	}
 
@@ -1366,6 +1381,7 @@ func (s *Server) registerFileTools(shouldRegister func(string) bool) {
 			mcp.WithString("transport",
 				mcp.Description("Transport request number (optional for local packages)"),
 			),
+			confirmParam(),
 		), s.handleDeployFromFile)
 	}
 
@@ -1416,6 +1432,7 @@ func (s *Server) registerFileTools(shouldRegister func(string) bool) {
 			mcp.WithString("transport",
 				mcp.Description("Transport request number (optional for local packages)"),
 			),
+			confirmParam(),
 		), s.handleRenameObject)
 	}
 }
@@ -1452,6 +1469,7 @@ func (s *Server) registerEditTools(shouldRegister func(string) bool) {
 			mcp.WithString("transport",
 				mcp.Description("Transport request number (required for objects not in $TMP package)"),
 			),
+			confirmParam(),
 		), s.handleEditSource)
 	}
 }
@@ -2134,6 +2152,7 @@ func (s *Server) registerInstallTools(shouldRegister func(string) bool) {
 			mcp.WithBoolean("check_only",
 				mcp.Description("Only check prerequisites without deploying (default: false)"),
 			),
+			confirmParam(),
 		), s.handleInstallZADTVSP)
 	}
 
@@ -2167,6 +2186,7 @@ func (s *Server) registerInstallTools(shouldRegister func(string) bool) {
 			mcp.WithBoolean("cleanup",
 				mcp.Description("Delete test objects after verification (default: false)"),
 			),
+			confirmParam(),
 		), s.handleInstallDummyTest)
 	}
 
@@ -2190,6 +2210,7 @@ func (s *Server) registerInstallTools(shouldRegister func(string) bool) {
 			mcp.WithString("name_filter",
 				mcp.Description("Deploy only objects matching this name pattern (e.g., 'ZCL_ABAPGIT_*')"),
 			),
+			confirmParam(),
 		), s.handleDeployZip)
 	}
 }

@@ -33,6 +33,8 @@ var objectTypeMapping = map[string]struct {
 //	Phase 2: Upload source code (Lock → UpdateSource → Unlock, NO syntax check)
 //	Phase 3: Mass activate all objects
 func (s *Server) handleDeployZip(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	ctx = applyImpactConfirm(ctx, request)
+
 	// Parse parameters
 	source, _ := request.GetArguments()["source"].(string)
 	if source == "" {
@@ -215,6 +217,12 @@ func (s *Server) handleDeployZip(ctx context.Context, request mcp.CallToolReques
 	// ================================================================
 	// PHASE 2: Upload source (Lock → UpdateSource → Unlock, NO syntax check)
 	// ================================================================
+	// Deliberately NOT create-fill-exempted from the impact gate: phase 1
+	// tolerates "already exists", so phase 2 uploads source to PRE-EXISTING
+	// objects as well as freshly created ones. A blanket withImpactCreateFill
+	// here would bypass block-mode gating on existing objects; instead each
+	// UpdateSource enforces at the primitive (per-object blocks surface in
+	// uploadFailures with their confirm tokens).
 	sb.WriteString("Phase 2: Uploading source code...\n")
 	var uploadSuccess, uploadFailed int
 	var uploadFailures []string

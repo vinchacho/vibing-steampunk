@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"testing"
 )
 
@@ -240,5 +241,20 @@ func TestGetSystem_TransportAttributeEnvDoesNotOverrideConfig(t *testing.T) {
 	}
 	if sys.TransportAttribute != "SAPTEST" {
 		t.Fatalf("TransportAttribute = %q, want SAPTEST", sys.TransportAttribute)
+	}
+}
+
+func TestSystemConfigImpactFieldsJSON(t *testing.T) {
+	raw := `{"systems":{"devsys":{"url":"https://dev.example.local:44300","impact_gate":"advise","impact_threshold":"medium"}}}`
+	var cfg SystemsConfig
+	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	sys := cfg.Systems["devsys"]
+	if sys.ImpactGate != "advise" {
+		t.Errorf("impact_gate = %q, want %q", sys.ImpactGate, "advise")
+	}
+	if sys.ImpactThreshold != "medium" {
+		t.Errorf("impact_threshold = %q, want %q", sys.ImpactThreshold, "medium")
 	}
 }

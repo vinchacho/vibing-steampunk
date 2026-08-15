@@ -139,6 +139,49 @@ func (c *Client) effectiveLockTransport(lockHandle, requested string) string {
 // transport is optional (for transportable objects)
 func (c *Client) UpdateSource(ctx context.Context, objectSourceURL string, source string, lockHandle string, transport string) error {
 	transport = c.effectiveLockTransport(lockHandle, transport)
+
+	// Primitive-level block enforcement (Task 8b). The outer write workflows
+	// (WriteSource, EditSource, RenameObject, DeleteObjectWithResult) stash an
+	// impact marker in ctx before their own gates, but UpdateSource is also
+	// reachable without one — the expert UpdateSource tool, the hyperfocused
+	// UPDATE_SOURCE route, DeployZip phase 2, Create/Update/DeployFromFile,
+	// dsl.Import, and WriteProgram/WriteClass all funnel here directly. In
+	// block mode, compute the blast radius at the primitive when nothing
+	// upstream did, so checkImpactGate below evaluates normally: a block
+	// propagates an *ImpactBlockedError through every wrapper, and a retry
+	// carrying WithImpactConfirm consumes the token at this same gate.
+	//
+	// Deliberately BLOCK MODE ONLY — advise mode does NOT compute here. The
+	// asymmetry: an advisory summary needs a result struct to attach to, and
+	// this primitive returns only an error, so advisory coverage stays at the
+	// four workflow sites that own result structs. The checkSafety pre-guard
+	// preserves the no-impact-traffic-on-refused-writes invariant (it is
+	// local and idempotent; checkMutation below re-runs the same
+	// OpUpdate/"UpdateSource" check to produce the refusal error).
+	//
+	// Create-fill exemption: the source-fill step of a just-created object
+	// (marked via withImpactCreateFill) skips the guard entirely — see the
+	// marker's doc comment in mutation_gate.go.
+	//
+	// Timing note: for markerless block-mode routes this computation inserts
+	// up to 3 stateless requests (usageReferences + E071/E070 RunQuery)
+	// between the caller's LOCK and the PUT. Precedent: the AllowedPackages
+	// SearchObject lookup already lands in the same window. Watch in
+	// integration for lock-session sensitivity.
+	//
+	// Confirm-retry note: on a retry carrying WithImpactConfirm the blast
+	// radius is recomputed here BEFORE the token is consumed at the gate. If
+	// the recomputed risk has dropped below the threshold, the gate no longer
+	// blocks, the token is never consumed, and it simply ages out —
+	// intentional (the token authorizes a risk level, not a bypass); do not
+	// "optimize" the recomputation away.
+	if c.config.Safety.ImpactGate == ImpactGateBlock &&
+		impactMarkerFromContext(ctx) == nil &&
+		!impactCreateFillExempt(ctx) &&
+		c.checkSafety(OpUpdate, "UpdateSource") == nil {
+		ctx = withImpactComputed(ctx, c.computeURLWriteImpact(ctx, objectSourceURL), OpUpdate, objectSourceURL)
+	}
+
 	// Unified mutation policy gate (op type + package + transport)
 	if err := c.checkMutation(ctx, MutationContext{
 		Op:        OpUpdate,
@@ -893,6 +936,16 @@ func escapeXML(s string) string {
 // objectURL is the ADT URL of the object (e.g., "/sap/bc/adt/programs/programs/ZTEST")
 // lockHandle is required (from LockObject)
 // transport is optional (for transportable objects)
+//
+// Deliberately NOT impact-gated at the primitive (unlike UpdateSource, which
+// stashes its own marker in block mode). DeleteObject's markerless callers
+// are error-recovery/cleanup paths — reconcileFailedCreate, ExecuteABAP's
+// temp-object rollback, and RenameObject step 6 — that delete zombie or
+// just-replaced objects. A block there (e.g. risk "unknown" under threshold
+// "medium" while the where-used service is down) would strand those zombies
+// with no caller positioned to surface the refusal or retry with a token.
+// The user-facing delete entry is DeleteObjectWithResult, which computes and
+// stashes the impact marker so checkImpactGate applies normally.
 func (c *Client) DeleteObject(ctx context.Context, objectURL string, lockHandle string, transport string) error {
 	transport = c.effectiveLockTransport(lockHandle, transport)
 	// Unified mutation policy gate (op type + package + transport)
@@ -922,6 +975,52 @@ func (c *Client) DeleteObject(ctx context.Context, objectURL string, lockHandle 
 	c.lockTransports.Delete(lockHandle)
 
 	return nil
+}
+
+// DeleteResult is the structured outcome of a delete, carrying the advisory
+// blast-radius summary when the impact gate is active.
+type DeleteResult struct {
+	Success bool           `json:"success"`
+	Object  string         `json:"object"`
+	Impact  *ImpactSummary `json:"impact,omitempty"`
+}
+
+// DeleteObjectWithResult deletes an existing object like DeleteObject, but
+// returns a structured result that carries the advisory ImpactSummary when
+// the impact gate is active. DeleteObject keeps its plain-error signature for
+// the internal cleanup paths (reconcileFailedCreate, RenameObject step 6,
+// workflow rollbacks) where a blast radius is meaningless — those delete
+// zombie or just-replaced objects; this wrapper is the user-facing entry
+// (the MCP DeleteObject tool).
+//
+// The impact is computed before delegating to DeleteObject, so the
+// usageReferences lookup precedes the DELETE. The caller's lock was acquired
+// in an earlier, separate call, and running requests in that window is not
+// entirely hazard-free: the mutation gate's package-check precedent here is
+// a CSRF-free GET, while the impact legs issue CSRF-bearing POSTs. If the
+// cached CSRF token expires between the caller's lock call and this delete,
+// the impact POST's 403-triggered refresh runs fetchCSRFToken with
+// stateful=false, and SAP may bind the session stateless — failing the
+// subsequent DELETE that carries the lock handle (see the warning on
+// fetchCSRFToken in http.go). The case is narrow (the token must expire
+// inside this window), loud (the DELETE fails with an explicit error;
+// nothing is silently lost), and gate-on only. Hardening — a stateful CSRF
+// fetch while a lock handle is live — is deferred to the block-mode and
+// integration-test tasks. Skipped when the local op-type policy would refuse
+// the delete anyway (e.g. read-only mode): checkSafety is local and
+// idempotent, and DeleteObject's checkMutation re-runs the same
+// OpDelete/"DeleteObject" check to produce the refusal error.
+func (c *Client) DeleteObjectWithResult(ctx context.Context, objectURL string, lockHandle string, transport string) (*DeleteResult, error) {
+	result := &DeleteResult{Object: objectURL}
+	if impactGateActive(&c.config.Safety) && c.checkSafety(OpDelete, "DeleteObject") == nil {
+		result.Impact = c.computeURLWriteImpact(ctx, objectURL)
+		ctx = withImpactComputed(ctx, result.Impact, OpDelete, objectURL)
+	}
+	if err := c.DeleteObject(ctx, objectURL, lockHandle, transport); err != nil {
+		return nil, err
+	}
+	result.Success = true
+	return result, nil
 }
 
 // --- Helper to get object URLs ---
@@ -1074,6 +1173,24 @@ func (c *Client) GetClassInclude(ctx context.Context, className string, includeT
 func (c *Client) UpdateClassInclude(ctx context.Context, className string, includeType ClassIncludeType, source string, lockHandle string, transport string) error {
 	sourceURL := GetClassIncludeSourceURL(className, includeType)
 	transport = c.effectiveLockTransport(lockHandle, transport)
+
+	// Primitive-level block enforcement (Task 8c) — exact mirror of the
+	// UpdateSource guard above (see its comment for the advise asymmetry,
+	// the create-fill exemption, the LOCK→PUT timing note, and the
+	// confirm-retry recomputation note). UpdateClassInclude issues its own
+	// PUT and is reachable markerless via the expert UpdateClassInclude
+	// tool, the hyperfocused routeClassIncludeAction, and UpdateFromFile's
+	// class-include branch. The identity machinery works unchanged:
+	// canonicalizeObjectURL maps the include URL to the parent class, so
+	// EditSource's include path (which stashes (OpUpdate, includeURL))
+	// origin-matches and honors its confirmed marker, while WriteSource's
+	// TestSource path skips on op mismatch.
+	if c.config.Safety.ImpactGate == ImpactGateBlock &&
+		impactMarkerFromContext(ctx) == nil &&
+		!impactCreateFillExempt(ctx) &&
+		c.checkSafety(OpUpdate, "UpdateClassInclude") == nil {
+		ctx = withImpactComputed(ctx, c.computeURLWriteImpact(ctx, sourceURL), OpUpdate, sourceURL)
+	}
 
 	// Unified mutation policy gate (op type + package + transport)
 	if err := c.checkMutation(ctx, MutationContext{

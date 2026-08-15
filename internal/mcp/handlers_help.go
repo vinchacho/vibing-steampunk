@@ -73,7 +73,15 @@ Activate:
 
 Service binding:
   SAP(action="edit", target="PUBLISH_SERVICE", params={"service_name": "ZSB_TEST"})
-  SAP(action="edit", target="UNPUBLISH_SERVICE", params={"service_name": "ZSB_TEST"})`)
+  SAP(action="edit", target="UNPUBLISH_SERVICE", params={"service_name": "ZSB_TEST"})
+
+Impact gate:
+  If a write is refused with "IMPACT GATE" and a token (impact-confirm-...),
+  review the cited callers, then retry the identical call with the token:
+  SAP(action="edit", target="PROG ZREPORT", params={"source": "...", "confirm": "impact-confirm-..."})
+  params.confirm is accepted by every gated write action, not just edit:
+  delete, rename, deploy_from_file, deploy_zip, class-include edits
+  (CLAS_INCLUDE), and write_program/write_class all take it the same way.`)
 
 	case "create":
 		return mcp.NewToolResultText(`SAP(action="create") - Create new objects
@@ -94,7 +102,10 @@ High-level create (with source):
 	case "delete":
 		return mcp.NewToolResultText(`SAP(action="delete") - Delete objects
 
-  SAP(action="delete", target="OBJECT", params={"object_url": "/sap/bc/adt/oo/classes/zcl_test", "lock_handle": "..."})`)
+  SAP(action="delete", target="OBJECT", params={"object_url": "/sap/bc/adt/oo/classes/zcl_test", "lock_handle": "..."})
+
+Impact gate: if the delete is refused with a token (impact-confirm-...),
+retry the identical call with params={..., "confirm": "impact-confirm-..."}.`)
 
 	case "search":
 		return mcp.NewToolResultText(`SAP(action="search") - Search for objects

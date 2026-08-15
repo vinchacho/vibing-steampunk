@@ -113,6 +113,9 @@ func TestRenameStopsBeforeDeletingOldObjectWhenActivationFails(t *testing.T) {
 	if len(result.Errors) == 0 || !strings.Contains(result.Errors[0], "synthetic activation failure") {
 		t.Fatalf("errors = %#v, want activation diagnostic", result.Errors)
 	}
+	if result.Impact != nil {
+		t.Fatalf("Impact = %+v, want nil with the impact gate off (default)", result.Impact)
+	}
 	if len(mock.requests) != 7 {
 		t.Fatalf("requests = %d, want flow to stop immediately after activation", len(mock.requests))
 	}

@@ -426,6 +426,7 @@ func TestIsUnrestricted(t *testing.T) {
 		{"disallowed ops", SafetyConfig{DisallowedOps: "CDUA"}, false},
 		{"package allowlist", SafetyConfig{AllowedPackages: []string{"Z*"}}, false},
 		{"transport opt-in alone still unrestricted", SafetyConfig{EnableTransports: true, AllowTransportableEdits: true}, true},
+		{"impact gate alone still unrestricted", SafetyConfig{ImpactGate: ImpactGateBlock}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -433,5 +434,102 @@ func TestIsUnrestricted(t *testing.T) {
 				t.Errorf("IsUnrestricted() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestNormalizeImpactGate(t *testing.T) {
+	tests := []struct {
+		in      string
+		want    string
+		wantErr bool
+	}{
+		{"", ImpactGateOff, false}, // empty = default
+		{"off", ImpactGateOff, false},
+		{"advise", ImpactGateAdvise, false},
+		{"block", ImpactGateBlock, false},
+		{"Advise", ImpactGateAdvise, false}, // case-insensitive
+		{" BLOCK ", ImpactGateBlock, false}, // trimmed
+		{"banana", "", true},
+		{"on", "", true},
+	}
+	for _, tt := range tests {
+		got, err := NormalizeImpactGate(tt.in)
+		if (err != nil) != tt.wantErr {
+			t.Errorf("NormalizeImpactGate(%q) error = %v, wantErr %v", tt.in, err, tt.wantErr)
+			continue
+		}
+		if got != tt.want {
+			t.Errorf("NormalizeImpactGate(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestNormalizeImpactGateErrorListsValidValues(t *testing.T) {
+	_, err := NormalizeImpactGate("banana")
+	if err == nil {
+		t.Fatal("expected error for invalid impact gate")
+	}
+	for _, v := range []string{"off", "advise", "block"} {
+		if !contains(err.Error(), v) {
+			t.Errorf("error %q does not list valid value %q", err.Error(), v)
+		}
+	}
+}
+
+func TestNormalizeImpactThreshold(t *testing.T) {
+	tests := []struct {
+		in      string
+		want    string
+		wantErr bool
+	}{
+		{"", ImpactThresholdHigh, false}, // empty = default
+		{"high", ImpactThresholdHigh, false},
+		{"medium", ImpactThresholdMedium, false},
+		{"High", ImpactThresholdHigh, false},       // case-insensitive
+		{" Medium ", ImpactThresholdMedium, false}, // trimmed
+		{"low", "", true},                          // only high/medium gate
+		{"banana", "", true},
+	}
+	for _, tt := range tests {
+		got, err := NormalizeImpactThreshold(tt.in)
+		if (err != nil) != tt.wantErr {
+			t.Errorf("NormalizeImpactThreshold(%q) error = %v, wantErr %v", tt.in, err, tt.wantErr)
+			continue
+		}
+		if got != tt.want {
+			t.Errorf("NormalizeImpactThreshold(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestNormalizeImpactThresholdErrorListsValidValues(t *testing.T) {
+	_, err := NormalizeImpactThreshold("low")
+	if err == nil {
+		t.Fatal("expected error for invalid impact threshold")
+	}
+	for _, v := range []string{"high", "medium"} {
+		if !contains(err.Error(), v) {
+			t.Errorf("error %q does not list valid value %q", err.Error(), v)
+		}
+	}
+}
+
+func TestSafetyDefaultsCarryImpactSettings(t *testing.T) {
+	for name, cfg := range map[string]SafetyConfig{
+		"unrestricted": UnrestrictedSafetyConfig(),
+		"default":      DefaultSafetyConfig(),
+	} {
+		if cfg.ImpactGate != ImpactGateOff {
+			t.Errorf("%s: ImpactGate = %q, want %q", name, cfg.ImpactGate, ImpactGateOff)
+		}
+		if cfg.ImpactThreshold != ImpactThresholdHigh {
+			t.Errorf("%s: ImpactThreshold = %q, want %q", name, cfg.ImpactThreshold, ImpactThresholdHigh)
+		}
+	}
+	// The impact gate is advisory config, not an op restriction: defaults must
+	// not flip the unrestricted warning.
+	u := UnrestrictedSafetyConfig()
+	if !u.IsUnrestricted() {
+		t.Error("impact defaults must not affect IsUnrestricted()")
 	}
 }

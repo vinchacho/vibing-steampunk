@@ -228,6 +228,9 @@ func (c *Client) CreateAndActivateProgram(ctx context.Context, programName strin
 		return nil, err
 	}
 	ctx = withMutationPackageChecked(ctx)
+	// The UpdateSource below fills the object created in step 1 — exempt it
+	// from the primitive impact guard (see withImpactCreateFill).
+	ctx = withImpactCreateFill(ctx)
 
 	objectURL := fmt.Sprintf("/sap/bc/adt/programs/programs/%s", url.PathEscape(programName))
 	sourceURL := objectURL + "/source/main"
@@ -322,6 +325,10 @@ func (c *Client) CreateClassWithTests(ctx context.Context, className string, des
 		return nil, err
 	}
 	ctx = withMutationPackageChecked(ctx)
+	// Steps 3 and 5 (UpdateSource / UpdateClassInclude) fill the class
+	// created in step 1 — exempt them from the primitive impact guards
+	// (see withImpactCreateFill).
+	ctx = withImpactCreateFill(ctx)
 
 	objectURL := fmt.Sprintf("/sap/bc/adt/oo/classes/%s", url.PathEscape(className))
 	sourceURL := objectURL + "/source/main"

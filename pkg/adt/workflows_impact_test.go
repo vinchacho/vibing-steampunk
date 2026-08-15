@@ -1,0 +1,702 @@
+//nolint:bodyclose // The client transport owns and closes all synthetic responses.
+package adt
+
+// Advisory impact wiring on the WriteSource/EditSource paths (impact gate
+// Task 5). These tests pin three contracts:
+//
+//  1. gate "advise" computes an ImpactSummary once per logical write, BEFORE
+//     the lock is acquired (never between LOCK and PUT), and attaches it to
+//     the workflow result;
+//  2. gate off (the default) computes nothing — no usageReferences and no
+//     E071/E070 RunQuery requests appear in the request log;
+//  3. WriteSource create-mode never computes impact even when advised — a
+//     brand-new object has no callers to analyze.
+
+import (
+	"context"
+	"net/http"
+	"strings"
+	"testing"
+)
+
+// impactCleanSyntaxXML is a syntax-check response with an empty message list,
+// so the write workflows proceed past the pre-lock syntax gate.
+const impactCleanSyntaxXML = `<?xml version="1.0" encoding="UTF-8"?>
+<chkrun:checkRunReports xmlns:chkrun="http://www.sap.com/adt/checkrun">
+  <chkrun:checkReport chkrun:status="clean">
+    <chkrun:checkMessageList/>
+  </chkrun:checkReport>
+</chkrun:checkRunReports>`
+
+// impactEmptyE071XML is an E071 lookup with zero rows: the transport-recency
+// leg stops after the first query (no E070 follow-up), keeping the mock
+// routing unambiguous — both RunQuery calls hit datapreview/freestyle.
+const impactEmptyE071XML = `<?xml version="1.0" encoding="utf-8"?>
+<dataPreview:tableData xmlns:dataPreview="http://www.sap.com/adt/dataPreview">
+  <dataPreview:totalRows>0</dataPreview:totalRows>
+</dataPreview:tableData>`
+
+// newImpactWorkflowClient wires a Client to a methodPathMock with the CSRF
+// token pre-set so the recorded call order contains only workflow requests.
+func newImpactWorkflowClient(mock *methodPathMock) *Client {
+	cfg := NewConfig("https://sap.example.com:44300", "user", "pass")
+	transport := NewTransportWithClient(cfg, mock)
+	transport.setCSRFToken("synthetic-token")
+	return NewClientWithTransport(cfg, transport)
+}
+
+// callIndex returns the index of the first recorded call matching the
+// predicate, or -1.
+func callIndex(calls []recordedCall, match func(recordedCall) bool) int {
+	for i, call := range calls {
+		if match(call) {
+			return i
+		}
+	}
+	return -1
+}
+
+// countCalls returns how many recorded calls match the predicate.
+func countCalls(calls []recordedCall, match func(recordedCall) bool) int {
+	n := 0
+	for _, call := range calls {
+		if match(call) {
+			n++
+		}
+	}
+	return n
+}
+
+func isImpactRefsCall(c recordedCall) bool {
+	return strings.Contains(c.path, "usageReferences")
+}
+
+func isImpactSQLCall(c recordedCall) bool {
+	return strings.Contains(c.path, "datapreview/freestyle")
+}
+
+func isLockCall(c recordedCall) bool {
+	return c.query.Get("_action") == "LOCK"
+}
+
+func TestWriteSourceUpdateComputesImpactBeforeLockWhenAdvised(t *testing.T) {
+	mock := &methodPathMock{routes: []routedResponse{
+		{method: http.MethodGet, pathSubstring: "/source/main", status: http.StatusOK, body: "REPORT ztest."},
+		{method: http.MethodPost, pathSubstring: "usageReferences", status: http.StatusOK, body: impactUsageXML},
+		{method: http.MethodPost, pathSubstring: "datapreview/freestyle", status: http.StatusOK, body: impactEmptyE071XML},
+		{method: http.MethodPost, pathSubstring: "/checkruns", status: http.StatusOK, body: impactCleanSyntaxXML},
+		{method: http.MethodPost, pathSubstring: "/programs/programs/ZTEST", status: http.StatusOK, body: syntheticLocalLockXML},
+		{method: http.MethodPut, pathSubstring: "/source/main", status: http.StatusOK, body: ""},
+		{method: http.MethodPost, pathSubstring: "/activation", status: http.StatusOK, body: ""},
+	}}
+	client := newImpactWorkflowClient(mock)
+	client.Safety().ImpactGate = ImpactGateAdvise
+
+	result, err := client.WriteSource(context.Background(), "PROG", "ZTEST", "REPORT ztest.", &WriteSourceOptions{
+		Mode: WriteModeUpdate,
+	})
+	if err != nil {
+		t.Fatalf("WriteSource() error = %v", err)
+	}
+	if !result.Success || result.Mode != "updated" {
+		t.Fatalf("workflow did not complete: %#v", result)
+	}
+
+	if result.Impact == nil {
+		t.Fatal("Impact = nil, want summary when gate is advise")
+	}
+	if !result.Impact.Available {
+		t.Fatalf("Impact.Available = false (%s), want true", result.Impact.Unavailable)
+	}
+	// impactUsageXML holds 4 distinct callers relative to ZTEST (the zcl_demo
+	// row is not the object under edit here, so it counts as a caller).
+	if result.Impact.Callers != 4 {
+		t.Fatalf("Impact.Callers = %d, want 4", result.Impact.Callers)
+	}
+
+	usageIdx := callIndex(mock.calls, isImpactRefsCall)
+	lockIdx := callIndex(mock.calls, isLockCall)
+	if usageIdx < 0 {
+		t.Fatal("no usageReferences request recorded — impact was not computed")
+	}
+	if lockIdx < 0 {
+		t.Fatal("no LOCK request recorded — workflow did not reach the lock step")
+	}
+	if usageIdx > lockIdx {
+		t.Fatalf("usageReferences at call %d AFTER lock at call %d — impact must be computed before the lock, never between LOCK and PUT", usageIdx, lockIdx)
+	}
+	if sqlIdx := callIndex(mock.calls, isImpactSQLCall); sqlIdx >= 0 && sqlIdx > lockIdx {
+		t.Fatalf("E071 lookup at call %d AFTER lock at call %d", sqlIdx, lockIdx)
+	}
+	if n := countCalls(mock.calls, isImpactRefsCall); n != 1 {
+		t.Fatalf("usageReferences requests = %d, want exactly 1 per logical write", n)
+	}
+}
+
+func TestWriteSourceUpdateSkipsImpactWhenGateOff(t *testing.T) {
+	mock := &methodPathMock{routes: []routedResponse{
+		{method: http.MethodGet, pathSubstring: "/source/main", status: http.StatusOK, body: "REPORT ztest."},
+		{method: http.MethodPost, pathSubstring: "/checkruns", status: http.StatusOK, body: impactCleanSyntaxXML},
+		{method: http.MethodPost, pathSubstring: "/programs/programs/ZTEST", status: http.StatusOK, body: syntheticLocalLockXML},
+		{method: http.MethodPut, pathSubstring: "/source/main", status: http.StatusOK, body: ""},
+		{method: http.MethodPost, pathSubstring: "/activation", status: http.StatusOK, body: ""},
+	}}
+	client := newImpactWorkflowClient(mock)
+	// Default safety: ImpactGate is unset (off).
+
+	result, err := client.WriteSource(context.Background(), "PROG", "ZTEST", "REPORT ztest.", &WriteSourceOptions{
+		Mode: WriteModeUpdate,
+	})
+	if err != nil {
+		t.Fatalf("WriteSource() error = %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("workflow did not complete: %#v", result)
+	}
+
+	if result.Impact != nil {
+		t.Fatalf("Impact = %+v, want nil with the gate off", result.Impact)
+	}
+	if idx := callIndex(mock.calls, isImpactRefsCall); idx >= 0 {
+		t.Fatalf("usageReferences request at call %d — gate off must compute nothing", idx)
+	}
+	if idx := callIndex(mock.calls, isImpactSQLCall); idx >= 0 {
+		t.Fatalf("E071 RunQuery request at call %d — gate off must compute nothing", idx)
+	}
+}
+
+func TestWriteSourceCreateSkipsImpactEvenWhenAdvised(t *testing.T) {
+	mock := &methodPathMock{routes: []routedResponse{
+		// Existence probe: 404 → create path. Everything past the probe may
+		// fail (unrouted → 404); this test only pins that create-mode never
+		// runs blast-radius analysis — a new object has no callers.
+		{method: http.MethodGet, pathSubstring: "/source/main", status: http.StatusNotFound, body: "not found"},
+	}}
+	client := newImpactWorkflowClient(mock)
+	client.Safety().ImpactGate = ImpactGateAdvise
+
+	result, err := client.WriteSource(context.Background(), "PROG", "ZTEST", "REPORT ztest.", &WriteSourceOptions{
+		Mode:        WriteModeCreate,
+		Description: "Synthetic program",
+		Package:     "$TMP",
+	})
+	if err != nil {
+		t.Fatalf("WriteSource() error = %v", err)
+	}
+	if result.Impact != nil {
+		t.Fatalf("Impact = %+v, want nil on the create path", result.Impact)
+	}
+	if idx := callIndex(mock.calls, isImpactRefsCall); idx >= 0 {
+		t.Fatalf("usageReferences request at call %d — create mode must not compute impact", idx)
+	}
+	if idx := callIndex(mock.calls, isImpactSQLCall); idx >= 0 {
+		t.Fatalf("E071 RunQuery request at call %d — create mode must not compute impact", idx)
+	}
+}
+
+// --- Create-fill exemption (Task 8c) ---
+//
+// The primitive-level block guards in UpdateSource/UpdateClassInclude must
+// not fire on the source-fill step of a just-created object: its blast
+// radius is definitionally empty, and a degraded-mode block (risk "unknown"
+// under threshold "medium" during a where-used outage) would strand a
+// partial create between LOCK and PUT. The tests below stage a FAILING
+// usageReferences route as a tripwire: any accidental impact computation
+// degrades to risk "unknown", which threshold "medium" blocks — so a gate
+// leak turns into a hard test failure, and a passing create additionally
+// proves zero impact requests were issued.
+
+// WriteSource create mode under gate "block": the whole create-then-fill
+// flow completes and no impact traffic is issued at the fill UpdateSource.
+func TestWriteSourceCreateUnderBlockCompletesDespiteFailingWhereUsed(t *testing.T) {
+	mock := &methodPathMock{routes: []routedResponse{
+		// Tripwire: any impact computation fails the where-used leg → risk
+		// "unknown" → blocked at threshold "medium" → create fails below.
+		{method: http.MethodPost, pathSubstring: "usageReferences", status: http.StatusInternalServerError, body: "where-used outage"},
+		// Existence probe: 404 → create path.
+		{method: http.MethodGet, pathSubstring: "/source/main", status: http.StatusNotFound, body: "not found"},
+		// CreateObject preflight packageExists($TMP).
+		{method: http.MethodPost, pathSubstring: "nodestructure", status: http.StatusOK, body: packageNodeStructureXML},
+		// Lock/unlock (more specific than the create POST — must come first).
+		{method: http.MethodPost, pathSubstring: "/programs/programs/ZTEST", status: http.StatusOK, body: syntheticLocalLockXML},
+		// CreateObject POST.
+		{method: http.MethodPost, pathSubstring: "/programs/programs", status: http.StatusOK, body: ""},
+		// Fill PUT.
+		{method: http.MethodPut, pathSubstring: "/source/main", status: http.StatusOK, body: ""},
+		{method: http.MethodPost, pathSubstring: "/activation", status: http.StatusOK, body: ""},
+	}}
+	client := newImpactWorkflowClient(mock)
+	client.Safety().ImpactGate = ImpactGateBlock
+	client.Safety().ImpactThreshold = ImpactThresholdMedium
+
+	result, err := client.WriteSource(context.Background(), "PROG", "ZTEST", "REPORT ztest.", &WriteSourceOptions{
+		Mode:        WriteModeCreate,
+		Description: "Synthetic program",
+		Package:     "$TMP",
+	})
+	if err != nil {
+		t.Fatalf("WriteSource() error = %v", err)
+	}
+	if !result.Success || result.Mode != "created" {
+		t.Fatalf("create did not complete under block mode: %#v", result)
+	}
+	if n := countCalls(mock.calls, isImpactRefsCall); n != 0 {
+		t.Fatalf("usageReferences requests = %d, want 0 — create-fill must not compute impact", n)
+	}
+	if n := countCalls(mock.calls, isImpactSQLCall); n != 0 {
+		t.Fatalf("E071 RunQuery requests = %d, want 0 — create-fill must not compute impact", n)
+	}
+	if idx := callIndex(mock.calls, isPutCall); idx < 0 {
+		t.Fatal("no PUT recorded — fill write never reached SAP")
+	}
+}
+
+// Direct CreateAndActivateProgram under gate "block": zero impact requests.
+// Here the tripwire is a HIGH-risk where-used response at threshold "high" —
+// if the fill UpdateSource computed impact, the create would block.
+func TestCreateAndActivateProgramUnderBlockSkipsImpact(t *testing.T) {
+	mock := &methodPathMock{routes: []routedResponse{
+		{method: http.MethodPost, pathSubstring: "usageReferences", status: http.StatusOK, body: highImpactUsageXML(30)},
+		{method: http.MethodPost, pathSubstring: "datapreview/freestyle", status: http.StatusOK, body: impactEmptyE071XML},
+		{method: http.MethodPost, pathSubstring: "nodestructure", status: http.StatusOK, body: packageNodeStructureXML},
+		{method: http.MethodPost, pathSubstring: "/programs/programs/ZTEST", status: http.StatusOK, body: syntheticLocalLockXML},
+		{method: http.MethodPost, pathSubstring: "/programs/programs", status: http.StatusOK, body: ""},
+		{method: http.MethodPut, pathSubstring: "/source/main", status: http.StatusOK, body: ""},
+		{method: http.MethodPost, pathSubstring: "/activation", status: http.StatusOK, body: ""},
+	}}
+	client := newImpactWorkflowClient(mock)
+	client.Safety().ImpactGate = ImpactGateBlock
+	client.Safety().ImpactThreshold = ImpactThresholdHigh
+
+	result, err := client.CreateAndActivateProgram(context.Background(),
+		"ZTEST", "Synthetic program", "$TMP", "REPORT ztest.", "")
+	if err != nil {
+		t.Fatalf("CreateAndActivateProgram() error = %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("create did not complete under block mode: %#v", result)
+	}
+	if n := countCalls(mock.calls, isImpactRefsCall); n != 0 {
+		t.Fatalf("usageReferences requests = %d, want 0 — create-fill must not compute impact", n)
+	}
+	if n := countCalls(mock.calls, isImpactSQLCall); n != 0 {
+		t.Fatalf("E071 RunQuery requests = %d, want 0 — create-fill must not compute impact", n)
+	}
+}
+
+// CreateClassWithTests under gate "block": exercises BOTH exempted
+// primitives — the fill UpdateSource (main source) and the fill
+// UpdateClassInclude (test include) — with the failing-where-used tripwire
+// at threshold "medium". RunUnitTests is deliberately unrouted (404): the
+// workflow tolerates a test-run failure and still reports Success.
+func TestCreateClassWithTestsUnderBlockSkipsImpact(t *testing.T) {
+	mock := &methodPathMock{routes: []routedResponse{
+		{method: http.MethodPost, pathSubstring: "usageReferences", status: http.StatusInternalServerError, body: "where-used outage"},
+		{method: http.MethodPost, pathSubstring: "nodestructure", status: http.StatusOK, body: packageNodeStructureXML},
+		// CreateTestInclude POST (before the lock route: its path contains
+		// the class URL too).
+		{method: http.MethodPost, pathSubstring: "/includes", status: http.StatusOK, body: ""},
+		{method: http.MethodPost, pathSubstring: "/oo/classes/ZCL_DEMO_CF", status: http.StatusOK, body: syntheticLocalLockXML},
+		{method: http.MethodPost, pathSubstring: "/oo/classes", status: http.StatusOK, body: ""},
+		{method: http.MethodPut, pathSubstring: "/includes/testclasses", status: http.StatusOK, body: ""},
+		{method: http.MethodPut, pathSubstring: "/source/main", status: http.StatusOK, body: ""},
+		{method: http.MethodPost, pathSubstring: "/activation", status: http.StatusOK, body: ""},
+	}}
+	client := newImpactWorkflowClient(mock)
+	client.Safety().ImpactGate = ImpactGateBlock
+	client.Safety().ImpactThreshold = ImpactThresholdMedium
+
+	result, err := client.CreateClassWithTests(context.Background(),
+		"ZCL_DEMO_CF", "Synthetic class", "$TMP",
+		"CLASS zcl_demo_cf DEFINITION PUBLIC. ENDCLASS.",
+		"CLASS ltc_test DEFINITION FOR TESTING.", "")
+	if err != nil {
+		t.Fatalf("CreateClassWithTests() error = %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("create did not complete under block mode: %#v", result)
+	}
+	if n := countCalls(mock.calls, isImpactRefsCall); n != 0 {
+		t.Fatalf("usageReferences requests = %d, want 0 — create-fill must not compute impact", n)
+	}
+	if n := countCalls(mock.calls, isImpactSQLCall); n != 0 {
+		t.Fatalf("E071 RunQuery requests = %d, want 0 — create-fill must not compute impact", n)
+	}
+	if n := countCalls(mock.calls, isPutCall); n != 2 {
+		t.Fatalf("PUT requests = %d, want 2 (main source + test include)", n)
+	}
+}
+
+func TestEditSourceComputesImpactWhenAdvised(t *testing.T) {
+	mock := &methodPathMock{routes: []routedResponse{
+		{method: http.MethodPost, pathSubstring: "usageReferences", status: http.StatusOK, body: impactUsageXML},
+		{method: http.MethodPost, pathSubstring: "datapreview/freestyle", status: http.StatusOK, body: impactEmptyE071XML},
+		{method: http.MethodGet, pathSubstring: "/source/main", status: http.StatusOK, body: "REPORT ztest.\nWRITE 'Hello'."},
+		{method: http.MethodPost, pathSubstring: "/checkruns", status: http.StatusOK, body: impactCleanSyntaxXML},
+		{method: http.MethodPost, pathSubstring: "/programs/programs/ZTEST", status: http.StatusOK, body: syntheticLocalLockXML},
+		{method: http.MethodPut, pathSubstring: "/source/main", status: http.StatusOK, body: ""},
+		{method: http.MethodPost, pathSubstring: "/activation", status: http.StatusOK, body: ""},
+	}}
+	client := newImpactWorkflowClient(mock)
+	client.Safety().ImpactGate = ImpactGateAdvise
+
+	result, err := client.EditSource(context.Background(),
+		"/sap/bc/adt/programs/programs/ZTEST", "'Hello'", "'World'", false, true, false)
+	if err != nil {
+		t.Fatalf("EditSource() error = %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("edit did not complete: %#v", result)
+	}
+
+	if result.Impact == nil {
+		t.Fatal("Impact = nil, want summary when gate is advise")
+	}
+	if !result.Impact.Available {
+		t.Fatalf("Impact.Available = false (%s), want true", result.Impact.Unavailable)
+	}
+
+	usageIdx := callIndex(mock.calls, isImpactRefsCall)
+	lockIdx := callIndex(mock.calls, isLockCall)
+	if usageIdx < 0 || lockIdx < 0 || usageIdx > lockIdx {
+		t.Fatalf("usageReferences call %d must precede lock call %d", usageIdx, lockIdx)
+	}
+	// The E071 lookup must carry the TADIR type derived from the object URL.
+	sqlIdx := callIndex(mock.calls, isImpactSQLCall)
+	if sqlIdx < 0 {
+		t.Fatal("no E071 RunQuery recorded — transport leg was skipped entirely")
+	}
+	if n := countCalls(mock.calls, isImpactRefsCall); n != 1 {
+		t.Fatalf("usageReferences requests = %d, want exactly 1 per logical write", n)
+	}
+}
+
+func TestEditSourceSkipsImpactWhenGateOff(t *testing.T) {
+	mock := &methodPathMock{routes: []routedResponse{
+		{method: http.MethodGet, pathSubstring: "/source/main", status: http.StatusOK, body: "REPORT ztest.\nWRITE 'Hello'."},
+		{method: http.MethodPost, pathSubstring: "/checkruns", status: http.StatusOK, body: impactCleanSyntaxXML},
+		{method: http.MethodPost, pathSubstring: "/programs/programs/ZTEST", status: http.StatusOK, body: syntheticLocalLockXML},
+		{method: http.MethodPut, pathSubstring: "/source/main", status: http.StatusOK, body: ""},
+		{method: http.MethodPost, pathSubstring: "/activation", status: http.StatusOK, body: ""},
+	}}
+	client := newImpactWorkflowClient(mock)
+
+	result, err := client.EditSource(context.Background(),
+		"/sap/bc/adt/programs/programs/ZTEST", "'Hello'", "'World'", false, true, false)
+	if err != nil {
+		t.Fatalf("EditSource() error = %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("edit did not complete: %#v", result)
+	}
+	if result.Impact != nil {
+		t.Fatalf("Impact = %+v, want nil with the gate off", result.Impact)
+	}
+	if idx := callIndex(mock.calls, isImpactRefsCall); idx >= 0 {
+		t.Fatalf("usageReferences request at call %d — gate off must compute nothing", idx)
+	}
+	if idx := callIndex(mock.calls, isImpactSQLCall); idx >= 0 {
+		t.Fatalf("E071 RunQuery request at call %d — gate off must compute nothing", idx)
+	}
+}
+
+// TestWriteSourceUpsertResolvingToUpdateComputesImpact pins that upsert mode
+// resolving to an update (the existence probe finds the object) takes the
+// same impact-computation path as an explicit update.
+func TestWriteSourceUpsertResolvingToUpdateComputesImpact(t *testing.T) {
+	mock := &methodPathMock{routes: []routedResponse{
+		{method: http.MethodGet, pathSubstring: "/source/main", status: http.StatusOK, body: "REPORT ztest."},
+		{method: http.MethodPost, pathSubstring: "usageReferences", status: http.StatusOK, body: impactUsageXML},
+		{method: http.MethodPost, pathSubstring: "datapreview/freestyle", status: http.StatusOK, body: impactEmptyE071XML},
+		{method: http.MethodPost, pathSubstring: "/checkruns", status: http.StatusOK, body: impactCleanSyntaxXML},
+		{method: http.MethodPost, pathSubstring: "/programs/programs/ZTEST", status: http.StatusOK, body: syntheticLocalLockXML},
+		{method: http.MethodPut, pathSubstring: "/source/main", status: http.StatusOK, body: ""},
+		{method: http.MethodPost, pathSubstring: "/activation", status: http.StatusOK, body: ""},
+	}}
+	client := newImpactWorkflowClient(mock)
+	client.Safety().ImpactGate = ImpactGateAdvise
+
+	result, err := client.WriteSource(context.Background(), "PROG", "ZTEST", "REPORT ztest.", &WriteSourceOptions{
+		Mode: WriteModeUpsert,
+	})
+	if err != nil {
+		t.Fatalf("WriteSource() error = %v", err)
+	}
+	if !result.Success || result.Mode != "updated" {
+		t.Fatalf("upsert did not resolve to update: %#v", result)
+	}
+	if result.Impact == nil {
+		t.Fatal("Impact = nil, want summary when upsert resolves to update under gate advise")
+	}
+	if n := countCalls(mock.calls, isImpactRefsCall); n != 1 {
+		t.Fatalf("usageReferences requests = %d, want exactly 1 per logical write", n)
+	}
+}
+
+// The two tests below pin the review fix: when the local op-type policy will
+// refuse the write anyway (read-only mode here), the gate must not spend
+// network calls computing a blast radius for a mutation that never happens.
+
+func TestWriteSourceRefusedByPolicySkipsImpact(t *testing.T) {
+	mock := &methodPathMock{routes: []routedResponse{
+		// Existence probe (a read, permitted in read-only mode) → update path.
+		{method: http.MethodGet, pathSubstring: "/source/main", status: http.StatusOK, body: "REPORT ztest."},
+	}}
+	client := newImpactWorkflowClient(mock)
+	client.Safety().ImpactGate = ImpactGateAdvise
+	client.Safety().ReadOnly = true
+
+	_, err := client.WriteSource(context.Background(), "PROG", "ZTEST", "REPORT ztest.", &WriteSourceOptions{
+		Mode: WriteModeUpdate,
+	})
+	if err == nil {
+		t.Fatal("WriteSource() error = nil, want read-only policy refusal")
+	}
+	if !strings.Contains(err.Error(), "blocked by safety configuration") {
+		t.Fatalf("error %q, want safety-configuration refusal", err)
+	}
+	if idx := callIndex(mock.calls, isImpactRefsCall); idx >= 0 {
+		t.Fatalf("usageReferences request at call %d — refused writes must not compute impact", idx)
+	}
+	if idx := callIndex(mock.calls, isImpactSQLCall); idx >= 0 {
+		t.Fatalf("E071 RunQuery request at call %d — refused writes must not compute impact", idx)
+	}
+}
+
+func TestEditSourceRefusedByPolicySkipsImpact(t *testing.T) {
+	mock := &methodPathMock{} // no routes: any request would 404 and fail the test below
+	client := newImpactWorkflowClient(mock)
+	client.Safety().ImpactGate = ImpactGateAdvise
+	client.Safety().ReadOnly = true
+
+	_, err := client.EditSource(context.Background(),
+		"/sap/bc/adt/programs/programs/ZTEST", "'Hello'", "'World'", false, true, false)
+	if err == nil {
+		t.Fatal("EditSource() error = nil, want read-only policy refusal")
+	}
+	if !strings.Contains(err.Error(), "blocked by safety configuration") {
+		t.Fatalf("error %q, want safety-configuration refusal", err)
+	}
+	if idx := callIndex(mock.calls, isImpactRefsCall); idx >= 0 {
+		t.Fatalf("usageReferences request at call %d — refused writes must not compute impact", idx)
+	}
+	if idx := callIndex(mock.calls, isImpactSQLCall); idx >= 0 {
+		t.Fatalf("E071 RunQuery request at call %d — refused writes must not compute impact", idx)
+	}
+}
+
+// --- Delete and rename paths (impact gate Task 6) ---
+//
+// Same contracts as the write paths above: gate "advise" computes exactly one
+// ImpactSummary per logical delete/rename and attaches it to the result, gate
+// off computes nothing, and a locally-refused mutation (read-only mode) never
+// spends network calls on blast-radius analysis.
+
+func isDeleteCall(c recordedCall) bool {
+	return c.method == http.MethodDelete
+}
+
+func TestDeleteObjectWithResultComputesImpactWhenAdvised(t *testing.T) {
+	mock := &methodPathMock{routes: []routedResponse{
+		{method: http.MethodPost, pathSubstring: "usageReferences", status: http.StatusOK, body: impactUsageXML},
+		{method: http.MethodPost, pathSubstring: "datapreview/freestyle", status: http.StatusOK, body: impactEmptyE071XML},
+		{method: http.MethodDelete, pathSubstring: "/programs/programs/ZTEST", status: http.StatusOK, body: ""},
+	}}
+	client := newImpactWorkflowClient(mock)
+	client.Safety().ImpactGate = ImpactGateAdvise
+
+	result, err := client.DeleteObjectWithResult(context.Background(),
+		"/sap/bc/adt/programs/programs/ZTEST", "SYNTHETIC-HANDLE", "")
+	if err != nil {
+		t.Fatalf("DeleteObjectWithResult() error = %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("delete did not complete: %#v", result)
+	}
+	if result.Object != "/sap/bc/adt/programs/programs/ZTEST" {
+		t.Fatalf("Object = %q, want the deleted object URL", result.Object)
+	}
+
+	if result.Impact == nil {
+		t.Fatal("Impact = nil, want summary when gate is advise")
+	}
+	if !result.Impact.Available {
+		t.Fatalf("Impact.Available = false (%s), want true", result.Impact.Unavailable)
+	}
+	// impactUsageXML holds 4 distinct callers relative to ZTEST (the zcl_demo
+	// row is not the object under delete here, so it counts as a caller).
+	if result.Impact.Callers != 4 {
+		t.Fatalf("Impact.Callers = %d, want 4", result.Impact.Callers)
+	}
+
+	usageIdx := callIndex(mock.calls, isImpactRefsCall)
+	deleteIdx := callIndex(mock.calls, isDeleteCall)
+	if usageIdx < 0 {
+		t.Fatal("no usageReferences request recorded — impact was not computed")
+	}
+	if deleteIdx < 0 {
+		t.Fatal("no DELETE request recorded — delete never reached SAP")
+	}
+	if usageIdx > deleteIdx {
+		t.Fatalf("usageReferences at call %d AFTER delete at call %d — impact must be computed before the mutation", usageIdx, deleteIdx)
+	}
+	if lockIdx := callIndex(mock.calls, isLockCall); lockIdx >= 0 && usageIdx > lockIdx {
+		t.Fatalf("usageReferences at call %d AFTER lock at call %d", usageIdx, lockIdx)
+	}
+	if n := countCalls(mock.calls, isImpactRefsCall); n != 1 {
+		t.Fatalf("usageReferences requests = %d, want exactly 1 per logical delete", n)
+	}
+}
+
+func TestDeleteObjectWithResultSkipsImpactWhenGateOff(t *testing.T) {
+	mock := &methodPathMock{routes: []routedResponse{
+		{method: http.MethodDelete, pathSubstring: "/programs/programs/ZTEST", status: http.StatusOK, body: ""},
+	}}
+	client := newImpactWorkflowClient(mock)
+	// Default safety: ImpactGate is unset (off).
+
+	result, err := client.DeleteObjectWithResult(context.Background(),
+		"/sap/bc/adt/programs/programs/ZTEST", "SYNTHETIC-HANDLE", "")
+	if err != nil {
+		t.Fatalf("DeleteObjectWithResult() error = %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("delete did not complete: %#v", result)
+	}
+	if result.Impact != nil {
+		t.Fatalf("Impact = %+v, want nil with the gate off", result.Impact)
+	}
+	if idx := callIndex(mock.calls, isImpactRefsCall); idx >= 0 {
+		t.Fatalf("usageReferences request at call %d — gate off must compute nothing", idx)
+	}
+	if idx := callIndex(mock.calls, isImpactSQLCall); idx >= 0 {
+		t.Fatalf("E071 RunQuery request at call %d — gate off must compute nothing", idx)
+	}
+}
+
+func TestDeleteObjectWithResultRefusedByPolicySkipsImpact(t *testing.T) {
+	mock := &methodPathMock{} // no routes: any request would 404 and fail the assertions below
+	client := newImpactWorkflowClient(mock)
+	client.Safety().ImpactGate = ImpactGateAdvise
+	client.Safety().ReadOnly = true
+
+	_, err := client.DeleteObjectWithResult(context.Background(),
+		"/sap/bc/adt/programs/programs/ZTEST", "SYNTHETIC-HANDLE", "")
+	if err == nil {
+		t.Fatal("DeleteObjectWithResult() error = nil, want read-only policy refusal")
+	}
+	if !strings.Contains(err.Error(), "blocked by safety configuration") {
+		t.Fatalf("error %q, want safety-configuration refusal", err)
+	}
+	if idx := callIndex(mock.calls, isImpactRefsCall); idx >= 0 {
+		t.Fatalf("usageReferences request at call %d — refused deletes must not compute impact", idx)
+	}
+	if idx := callIndex(mock.calls, isImpactSQLCall); idx >= 0 {
+		t.Fatalf("E071 RunQuery request at call %d — refused deletes must not compute impact", idx)
+	}
+}
+
+// TestRenameObjectComputesImpactWhenAdvised drives a full successful rename
+// under gate "advise" and pins that the result carries the blast radius of the
+// OLD object — renaming a high-caller object breaks every caller of the old
+// name, which is exactly the case this feature exists for. The impact requests
+// must precede every lock in the flow.
+func TestRenameObjectComputesImpactWhenAdvised(t *testing.T) {
+	mock := &methodPathMock{routes: []routedResponse{
+		{method: http.MethodPost, pathSubstring: "usageReferences", status: http.StatusOK, body: impactUsageXML},
+		{method: http.MethodPost, pathSubstring: "datapreview/freestyle", status: http.StatusOK, body: impactEmptyE071XML},
+		{method: http.MethodGet, pathSubstring: "/programs/programs/zold/source/main", status: http.StatusOK, body: "REPORT zold."},
+		{method: http.MethodPost, pathSubstring: "nodestructure", status: http.StatusOK, body: packageNodeStructureXML},
+		{method: http.MethodPost, pathSubstring: "/programs/programs/zold", status: http.StatusOK, body: syntheticLocalLockXML},
+		{method: http.MethodDelete, pathSubstring: "/programs/programs/zold", status: http.StatusOK, body: ""},
+		{method: http.MethodPut, pathSubstring: "/programs/programs/znew/source/main", status: http.StatusOK, body: ""},
+		{method: http.MethodPost, pathSubstring: "/programs/programs/znew", status: http.StatusOK, body: syntheticLocalLockXML},
+		{method: http.MethodPost, pathSubstring: "/activation", status: http.StatusOK, body: ""},
+		// Create posts to the collection URL — must stay below the more
+		// specific /zold and /znew routes (first match wins).
+		{method: http.MethodPost, pathSubstring: "/programs/programs", status: http.StatusCreated, body: ""},
+	}}
+	client := newImpactWorkflowClient(mock)
+	client.Safety().ImpactGate = ImpactGateAdvise
+
+	result, err := client.RenameObject(context.Background(), ObjectTypeProgram, "ZOLD", "ZNEW", "$TMP", "")
+	if err != nil {
+		t.Fatalf("RenameObject() error = %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("rename did not complete: %#v", result)
+	}
+
+	if result.Impact == nil {
+		t.Fatal("Impact = nil, want summary when gate is advise")
+	}
+	if !result.Impact.Available {
+		t.Fatalf("Impact.Available = false (%s), want true", result.Impact.Unavailable)
+	}
+	// All 4 distinct impactUsageXML callers reference the OLD object.
+	if result.Impact.Callers != 4 {
+		t.Fatalf("Impact.Callers = %d, want 4", result.Impact.Callers)
+	}
+
+	usageIdx := callIndex(mock.calls, isImpactRefsCall)
+	lockIdx := callIndex(mock.calls, isLockCall)
+	if usageIdx < 0 {
+		t.Fatal("no usageReferences request recorded — impact was not computed")
+	}
+	if lockIdx < 0 {
+		t.Fatal("no LOCK request recorded — rename never reached the lock step")
+	}
+	if usageIdx > lockIdx {
+		t.Fatalf("usageReferences at call %d AFTER first lock at call %d — impact must be computed before any lock", usageIdx, lockIdx)
+	}
+	if sqlIdx := callIndex(mock.calls, isImpactSQLCall); sqlIdx >= 0 && sqlIdx > lockIdx {
+		t.Fatalf("E071 lookup at call %d AFTER first lock at call %d", sqlIdx, lockIdx)
+	}
+	if n := countCalls(mock.calls, isImpactRefsCall); n != 1 {
+		t.Fatalf("usageReferences requests = %d, want exactly 1 per logical rename", n)
+	}
+}
+
+func TestRenameObjectRefusedByPolicySkipsImpact(t *testing.T) {
+	mock := &methodPathMock{} // no routes: any request would 404 and fail the assertions below
+	client := newImpactWorkflowClient(mock)
+	client.Safety().ImpactGate = ImpactGateAdvise
+	client.Safety().ReadOnly = true
+
+	_, err := client.RenameObject(context.Background(), ObjectTypeProgram, "ZOLD", "ZNEW", "$TMP", "")
+	if err == nil {
+		t.Fatal("RenameObject() error = nil, want read-only policy refusal")
+	}
+	if !strings.Contains(err.Error(), "blocked by safety configuration") {
+		t.Fatalf("error %q, want safety-configuration refusal", err)
+	}
+	if idx := callIndex(mock.calls, isImpactRefsCall); idx >= 0 {
+		t.Fatalf("usageReferences request at call %d — refused renames must not compute impact", idx)
+	}
+	if idx := callIndex(mock.calls, isImpactSQLCall); idx >= 0 {
+		t.Fatalf("E071 RunQuery request at call %d — refused renames must not compute impact", idx)
+	}
+}
+
+// TestImpactGateActiveIsAnAllowlist pins the reviewer requirement that the
+// gate check is an allowlist of the two active modes — NOT `!= off` — so a
+// garbage config value stays inert instead of enabling network calls.
+func TestImpactGateActiveIsAnAllowlist(t *testing.T) {
+	tests := []struct {
+		gate string
+		want bool
+	}{
+		{"", false},
+		{ImpactGateOff, false},
+		{ImpactGateAdvise, true},
+		{ImpactGateBlock, true},
+		{"banana", false},
+		{"ADVISE", false}, // config plumbing normalizes case; raw values do not activate
+	}
+	for _, tt := range tests {
+		cfg := &SafetyConfig{ImpactGate: tt.gate}
+		if got := impactGateActive(cfg); got != tt.want {
+			t.Fatalf("impactGateActive(%q) = %v, want %v", tt.gate, got, tt.want)
+		}
+	}
+}

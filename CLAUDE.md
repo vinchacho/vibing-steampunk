@@ -12,9 +12,9 @@
 |--------|-------|
 | **Latest version** | v2.39.0 |
 | **Modes** | `hyperfocused` (1 universal tool, **default**) · `focused` (103 whitelisted tools) · `expert` (154 registered tools; runtime count varies with feature detection and `--disabled-groups`) |
-| **Tests** | 1,363 `func Test` functions across 16 packages (incl. 35 integration tests behind the `integration` build tag) — `go test ./...` green as of 2026-08-15 |
+| **Tests** | 834 `func Test` functions across 17 packages (incl. 48 integration tests behind the `integration` build tag) — `go test ./...` green as of 2026-08-15 |
 | **Platforms** | 9 (cross-compiled via Makefile) |
-| **Reports** | 195 in `reports/` (184 dated `YYYY-MM-DD-NNN-title.md` + 11 reference) |
+| **Reports** | 196 in `reports/` (185 dated `YYYY-MM-DD-NNN-title.md` + 11 reference) |
 | **Sync** | 0 commits behind upstream `oisee/vibing-steampunk` (last merge `b884ea7`, 2026-07-11) |
 
 > Counts are code-derived (see "Reconciling counts" below). If a number here disagrees with the code, the code wins — re-measure, don't copy forward.
@@ -105,6 +105,8 @@ SAP_URL=http://host:50000 SAP_USER=user SAP_PASSWORD=pass ./vsp
 | `SAP_DISALLOWED_OPS` / `--disallowed-ops` | Blacklist operation types (e.g., "CDUA") |
 | `SAP_ALLOWED_PACKAGES` / `--allowed-packages` | Restrict to packages (supports wildcards: "Z*") |
 | `SAP_ALLOW_TRANSPORTABLE_EDITS` / `--allow-transportable-edits` | Allow editing objects in transportable packages (default: false) |
+| `SAP_IMPACT_GATE` / `--impact-gate` | Blast-radius gate on writes: `off` (default) · `advise` (attach impact summary to write results) · `block` (additionally refuse high-impact writes until confirmed with the `confirm` token) |
+| `SAP_IMPACT_THRESHOLD` / `--impact-threshold` | Risk tier at which `--impact-gate=block` refuses: `high` (default) · `medium` (also gates unknown risk) |
 | **Feature Configuration (Safety Network)** | |
 | `SAP_FEATURE_ABAPGIT` / `--feature-abapgit` | abapGit integration: auto, on, off (default: auto) |
 | `SAP_FEATURE_RAP` / `--feature-rap` | RAP/OData development: auto, on, off (default: auto) |
@@ -295,7 +297,7 @@ This allows AI-driven debugging without manual SAP GUI interaction.
 
 ### Report Naming Convention
 
-**Format:** `./reports/{YYYY-MM-DD-<number>-<title>}.md` — sequential numbers starting from 001 each day, lowercase hyphen-separated titles. Date range so far: 2025-12-02 through 2026-07-11. Browse `reports/` for the full listing; the 11 reference documents (ADT discovery/internals/capability guides, cookie-auth guide, focused-mode proposal, Go-port assessment, rename analysis) are non-numbered.
+**Format:** `./reports/{YYYY-MM-DD-<number>-<title>}.md` — sequential numbers starting from 001 each day, lowercase hyphen-separated titles. Date range so far: 2025-12-02 through 2026-08-15. Browse `reports/` for the full listing; the 11 reference documents (ADT discovery/internals/capability guides, cookie-auth guide, focused-mode proposal, Go-port assessment, rename analysis) are non-numbered.
 
 ### Creating New Reports
 

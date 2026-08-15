@@ -17,8 +17,8 @@ import (
 // AsyncTask represents a background task status.
 type AsyncTask struct {
 	ID        string      `json:"id"`
-	Type      string      `json:"type"`       // "report", "export", etc.
-	Status    string      `json:"status"`     // "running", "completed", "error"
+	Type      string      `json:"type"`   // "report", "export", etc.
+	Status    string      `json:"status"` // "running", "completed", "error"
 	StartedAt time.Time   `json:"started_at"`
 	EndedAt   *time.Time  `json:"ended_at,omitempty"`
 	Result    interface{} `json:"result,omitempty"`
@@ -27,13 +27,13 @@ type AsyncTask struct {
 
 // Server wraps the MCP server with ADT client.
 type Server struct {
-	mcpServer      *server.MCPServer
-	adtClient      *adt.Client
-	amdpWSClient   *adt.AMDPWebSocketClient   // WebSocket-based AMDP client (ZADT_VSP)
-	debugWSClient  *adt.DebugWebSocketClient  // WebSocket-based debug client (ZADT_VSP)
-	config         *Config                    // Server configuration for session manager creation
-	featureProber  *adt.FeatureProber         // Feature detection system (safety network)
-	featureConfig  adt.FeatureConfig          // Feature configuration
+	mcpServer     *server.MCPServer
+	adtClient     *adt.Client
+	amdpWSClient  *adt.AMDPWebSocketClient  // WebSocket-based AMDP client (ZADT_VSP)
+	debugWSClient *adt.DebugWebSocketClient // WebSocket-based debug client (ZADT_VSP)
+	config        *Config                   // Server configuration for session manager creation
+	featureProber *adt.FeatureProber        // Feature detection system (safety network)
+	featureConfig adt.FeatureConfig         // Feature configuration
 
 	// Async task management
 	asyncTasks   map[string]*AsyncTask
@@ -66,15 +66,17 @@ type Config struct {
 	DisabledGroups string
 
 	// Safety configuration
-	ReadOnly         bool
-	BlockFreeSQL     bool
-	AllowedOps       string
-	DisallowedOps    string
-	AllowedPackages  []string
+	ReadOnly                bool
+	BlockFreeSQL            bool
+	AllowedOps              string
+	DisallowedOps           string
+	AllowedPackages         []string
 	EnableTransports        bool     // Explicitly enable transport management (default: disabled)
 	TransportReadOnly       bool     // Only allow read operations on transports (list, get)
 	AllowedTransports       []string // Whitelist specific transports (supports wildcards like "A4HK*")
 	AllowTransportableEdits bool     // Allow editing objects that require transport requests
+	ImpactGate              string   // Blast-radius gate on writes: "off" (default), "advise", "block"
+	ImpactThreshold         string   // Risk tier that gates in block mode: "high" (default), "medium" (also gates unknown)
 
 	// Feature configuration (safety network)
 	// Values: "auto" (default, probe system), "on" (force enabled), "off" (force disabled)
@@ -159,6 +161,12 @@ func NewServer(cfg *Config) *Server {
 	}
 	if cfg.AllowTransportableEdits {
 		safety.AllowTransportableEdits = true
+	}
+	if cfg.ImpactGate != "" {
+		safety.ImpactGate = cfg.ImpactGate
+	}
+	if cfg.ImpactThreshold != "" {
+		safety.ImpactThreshold = cfg.ImpactThreshold
 	}
 	if safety.IsUnrestricted() {
 		fmt.Fprintln(os.Stderr, "WARNING: no safety restrictions configured — all write operations and free SQL are enabled on all packages. Consider --read-only, --allowed-packages, or --allowed-ops (SAP_READ_ONLY / SAP_ALLOWED_PACKAGES / SAP_ALLOWED_OPS).")
@@ -248,6 +256,19 @@ func newToolResultError(message string) *mcp.CallToolResult {
 	result := mcp.NewToolResultText(message)
 	result.IsError = true
 	return result
+}
+
+// applyImpactConfirm reads the optional `confirm` tool argument and, when
+// non-empty, attaches it to ctx as an impact-gate confirmation token
+// (adt.WithImpactConfirm). Every tool that can surface an
+// *adt.ImpactBlockedError registers the parameter (see confirmParam), and
+// its handler calls this before the client call so a blocked write can be
+// retried unchanged with the token from the refusal.
+func applyImpactConfirm(ctx context.Context, request mcp.CallToolRequest) context.Context {
+	if token, ok := request.GetArguments()["confirm"].(string); ok && token != "" {
+		return adt.WithImpactConfirm(ctx, token)
+	}
+	return ctx
 }
 
 // ensureWSConnected ensures the WebSocket client is connected, creating it if needed.
