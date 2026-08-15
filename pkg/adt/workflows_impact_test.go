@@ -524,6 +524,27 @@ func TestRenameObjectComputesImpactWhenAdvised(t *testing.T) {
 	}
 }
 
+func TestRenameObjectRefusedByPolicySkipsImpact(t *testing.T) {
+	mock := &methodPathMock{} // no routes: any request would 404 and fail the assertions below
+	client := newImpactWorkflowClient(mock)
+	client.Safety().ImpactGate = ImpactGateAdvise
+	client.Safety().ReadOnly = true
+
+	_, err := client.RenameObject(context.Background(), ObjectTypeProgram, "ZOLD", "ZNEW", "$TMP", "")
+	if err == nil {
+		t.Fatal("RenameObject() error = nil, want read-only policy refusal")
+	}
+	if !strings.Contains(err.Error(), "blocked by safety configuration") {
+		t.Fatalf("error %q, want safety-configuration refusal", err)
+	}
+	if idx := callIndex(mock.calls, isImpactRefsCall); idx >= 0 {
+		t.Fatalf("usageReferences request at call %d — refused renames must not compute impact", idx)
+	}
+	if idx := callIndex(mock.calls, isImpactSQLCall); idx >= 0 {
+		t.Fatalf("E071 RunQuery request at call %d — refused renames must not compute impact", idx)
+	}
+}
+
 // TestImpactGateActiveIsAnAllowlist pins the reviewer requirement that the
 // gate check is an allowlist of the two active modes — NOT `!= off` — so a
 // garbage config value stays inert instead of enabling network calls.

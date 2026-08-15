@@ -942,12 +942,21 @@ type DeleteResult struct {
 //
 // The impact is computed before delegating to DeleteObject, so the
 // usageReferences lookup precedes the DELETE. The caller's lock was acquired
-// in an earlier, separate call — the mutation gate's own package resolution
-// already runs stateless requests at this same point, so this adds no new
-// session hazard. Skipped when the local op-type policy would refuse the
-// delete anyway (e.g. read-only mode): checkSafety is local and idempotent,
-// and DeleteObject's checkMutation re-runs the same OpDelete/"DeleteObject"
-// check to produce the refusal error.
+// in an earlier, separate call, and running requests in that window is not
+// entirely hazard-free: the mutation gate's package-check precedent here is
+// a CSRF-free GET, while the impact legs issue CSRF-bearing POSTs. If the
+// cached CSRF token expires between the caller's lock call and this delete,
+// the impact POST's 403-triggered refresh runs fetchCSRFToken with
+// stateful=false, and SAP may bind the session stateless — failing the
+// subsequent DELETE that carries the lock handle (see the warning on
+// fetchCSRFToken in http.go). The case is narrow (the token must expire
+// inside this window), loud (the DELETE fails with an explicit error;
+// nothing is silently lost), and gate-on only. Hardening — a stateful CSRF
+// fetch while a lock handle is live — is deferred to the block-mode and
+// integration-test tasks. Skipped when the local op-type policy would refuse
+// the delete anyway (e.g. read-only mode): checkSafety is local and
+// idempotent, and DeleteObject's checkMutation re-runs the same
+// OpDelete/"DeleteObject" check to produce the refusal error.
 func (c *Client) DeleteObjectWithResult(ctx context.Context, objectURL string, lockHandle string, transport string) (*DeleteResult, error) {
 	result := &DeleteResult{Object: objectURL}
 	if impactGateActive(&c.config.Safety) && c.checkSafety(OpDelete, "DeleteObject") == nil {

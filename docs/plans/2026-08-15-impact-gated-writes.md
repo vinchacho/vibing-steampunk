@@ -266,6 +266,8 @@ Same pattern as Task 5. Commit `feat(adt): advisory impact on delete and rename`
 
 **Step 3: Implement:** step 4 reads `impactFromContext(ctx)`; exported `WithImpactConfirm(ctx, token)` ctx setter; blocked error type `*ImpactBlockedError` with `Summary` and `Token` fields, `Error()` renders the design's text.
 
+**Rename/multi-step constraint (from Task 6 review):** RenameObject stashes the OLD object's summary in ctx before its OpDelete gate, and the marker is inherited by the OpCreate/UpdateSource/DeleteObject sub-steps. Step 4 enforcement MUST bind to the (op, objectURL) identity of the summary — i.e. only gate when checkMutation's own (m.Op, m.ObjectURL) matches the stashed summary's origin — or the rename path must strip/rescope the marker after the first gate. Otherwise a confirmed high-risk rename consumes its token at the OpDelete gate and re-blocks un-confirmably at sub-step gates. To make the identity check implementable, extend the `withImpactComputed` marker to carry its origin op+URL alongside the summary (e.g. a ctx value of {summary, op, objectURL} — implementable in Task 8; the Task 5/6 call sites only gain the two extra fields). Add a rename-under-block test to prove a single confirm suffices for the whole rename.
+
 **Commit:** `feat(adt): impact gate block mode`.
 
 ---
