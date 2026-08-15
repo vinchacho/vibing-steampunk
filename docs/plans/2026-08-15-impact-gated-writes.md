@@ -250,7 +250,7 @@ Same pattern as Task 5. Commit `feat(adt): advisory impact on delete and rename`
 
 **Step 1: Failing tests:** issue → validate consumes (second use fails); expiry (inject clock var) → invalid; token bound to objectURL+op (token for update of A rejected for delete of A).
 
-**Step 3: Implementation:** `impactTokenStore` struct (map + `sync.Mutex`) on `Client`; `IssueImpactToken(objectURL, op string) string` (`"impact-confirm-" + 8 hex from crypto/rand`), `consumeImpactToken(objectURL, op, token string) bool`; 10-minute TTL; opportunistic sweep on issue.
+**Step 3: Implementation:** `impactTokenStore` struct (map + `sync.Mutex`) on `Client`; `IssueImpactToken(objectURL, op string) string` (`"impact-confirm-" + 32 hex (16 bytes) from crypto/rand`), `consumeImpactToken(objectURL, op, token string) bool`; 10-minute TTL; opportunistic sweep on issue.
 
 **Commit:** `feat(adt): impact confirmation tokens`.
 

@@ -69,11 +69,11 @@ The refusal renders the report and the exact retry:
 IMPACT GATE: refusing update of ZCL_PAYMENT_HANDLER (risk: high).
 47 callers across 3 packages (Z_BILLING, Z_ORDERS, Z_MIGRATION); released
 transport TR-EXAMPLE touched this object on 2026-08-03.
-To proceed, retry the same call with: confirm: "impact-confirm-3f9a2c1d"
+To proceed, retry the same call with: confirm: "impact-confirm-3f9a2c1d8e07b64a5c21d9f04b83e7a6"
 Token expires in 10 minutes and is valid only for this object and operation.
 ```
 
-Tokens come from `crypto/rand`, live in a mutex-guarded in-memory map keyed by object URL + operation, expire after 10 minutes, and are consumed on use. A process restart invalidates them — the same trade-off the codebase already accepts for lock-to-transport context. MCP write tools gain an optional `confirm` parameter; the CLI gains `--confirm-impact`.
+Tokens come from `crypto/rand` (16 random bytes → `impact-confirm-` + 32 hex chars), live in a mutex-guarded in-memory map keyed by canonicalized object URL + operation, expire after 10 minutes, and are consumed on use. A process restart invalidates them — the same trade-off the codebase already accepts for lock-to-transport context. MCP write tools gain an optional `confirm` parameter; the CLI gains `--confirm-impact`.
 
 Rationale for the sub-decisions: retrying with a parameter beats a new confirmation tool (smallest protocol; the error shows the exact retry). In-memory beats signed tokens (matches existing precedent; restart fails safe). A risk tier beats a raw caller count (folds in spread and production recency). Unknown gating only at `medium` keeps defaults unbrickable.
 

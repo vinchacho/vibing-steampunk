@@ -5,7 +5,6 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 )
@@ -28,24 +27,27 @@ type impactTokenStore struct {
 	entries map[string]impactTokenEntry // key: impactTokenKey(objectURL, op)
 }
 
-// impactTokenKey builds the store key. The object URL is lowercased so
-// callers that differ only in URL casing address the same token; the
-// operation is kept verbatim.
+// impactTokenKey builds the store key. The object URL is canonicalized
+// (see canonicalizeObjectURL: case, trailing slash, percent-encoding, and
+// source suffixes like "/source/main" are normalized away), so the issue
+// and consume sites may each pass any equivalent form of the object URL
+// and still address the same token. The operation is kept verbatim.
 func impactTokenKey(objectURL, op string) string {
-	return strings.ToLower(objectURL) + "|" + op
+	return canonicalizeObjectURL(objectURL) + "|" + op
 }
 
 // IssueImpactToken mints a confirmation token for a blocked write on
 // (objectURL, op) and returns it. The token is single-use, expires after
 // 10 minutes (measured via impactNow so tests can pin the clock), and is
-// valid only for the exact object URL and operation it was issued for.
-// Re-issuing for the same key invalidates any previous token.
+// valid only for the object URL (any canonically equivalent form — see
+// impactTokenKey) and operation it was issued for. Re-issuing for the
+// same key invalidates any previous token.
 //
 // Tokens live only in this process's memory: a restart invalidates them.
 // That is the same trade-off the codebase already accepts for
 // lock-to-transport context (lockTransports).
 func (c *Client) IssueImpactToken(objectURL, op string) string {
-	b := make([]byte, 4)
+	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
 		// crypto/rand failing means the platform's CSPRNG is broken;
 		// a guessable fallback token would defeat the gate.
@@ -76,8 +78,8 @@ func (c *Client) IssueImpactToken(objectURL, op string) string {
 // consumeImpactToken validates token against the entry stored for
 // (objectURL, op). It returns true exactly once per issued token: a
 // successful consume deletes the entry. Expired entries are deleted on
-// sight and never match. The comparison is constant-time — the tokens are
-// short, so a leaky compare would be trivially brute-forceable.
+// sight and never match. The comparison is constant-time so the compare
+// itself leaks nothing about the stored token.
 func (c *Client) consumeImpactToken(objectURL, op, token string) bool {
 	key := impactTokenKey(objectURL, op)
 

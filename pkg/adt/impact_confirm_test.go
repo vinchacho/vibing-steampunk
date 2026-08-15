@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-var impactTokenPattern = regexp.MustCompile(`^impact-confirm-[0-9a-f]{8}$`)
+var impactTokenPattern = regexp.MustCompile(`^impact-confirm-[0-9a-f]{32}$`)
 
 func TestImpactTokenIssueAndConsume(t *testing.T) {
 	c := &Client{}
@@ -33,6 +33,13 @@ func TestImpactTokenIssueAndConsume(t *testing.T) {
 	if !c.consumeImpactToken(url, "update", tok2) {
 		t.Fatal("consume should be case-insensitive on objectURL")
 	}
+
+	// Keying canonicalizes the object URL: a token issued with the
+	// "/source/main" form must be consumable with the bare object URL.
+	tok3 := c.IssueImpactToken("/sap/bc/adt/oo/classes/zcl_demo/source/main", "update")
+	if !c.consumeImpactToken("/sap/bc/adt/oo/classes/zcl_demo", "update", tok3) {
+		t.Fatal("consume should canonicalize objectURL (/source/main == bare object URL)")
+	}
 }
 
 func TestImpactTokenExpiry(t *testing.T) {
@@ -48,6 +55,16 @@ func TestImpactTokenExpiry(t *testing.T) {
 	now = now.Add(10*time.Minute + time.Second)
 	if c.consumeImpactToken(url, "update", tok) {
 		t.Fatal("consume should fail after the 10-minute TTL")
+	}
+
+	// Exact boundary: the TTL interval is half-open [issue, issue+10m) — a
+	// consume at exactly issue+10m must fail.
+	issue := time.Date(2026, 8, 15, 13, 0, 0, 0, time.UTC)
+	now = issue
+	tok = c.IssueImpactToken(url, "update")
+	now = issue.Add(10 * time.Minute)
+	if c.consumeImpactToken(url, "update", tok) {
+		t.Fatal("consume at exactly issue+TTL should fail (half-open interval)")
 	}
 }
 
