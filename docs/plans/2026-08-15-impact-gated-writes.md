@@ -8,11 +8,13 @@
 
 **Tech Stack:** Go; existing `FindReferences` (ADT usageReferences), `RunQuery` (E071/E070), mock-transport test pattern from `pkg/adt/devtools_activation_test.go` / `http_test.go`.
 
-**Design:** [2026-08-15-impact-gated-writes-design.md](2026-08-15-impact-gated-writes-design.md)
+**Design:** [2026-08-15-impact-gated-writes-design.md](2026-08-15-impact-gated-writes-design.md) (rewritten to as-built state in Task 10)
+
+**Status:** Tasks 1–10 done ✅ (see per-task marks and As-built notes). Task 11 (integration test + live verification) open.
 
 ---
 
-### Task 1: ImpactSummary type + risk tiering (pure logic)
+### Task 1: ImpactSummary type + risk tiering (pure logic) ✅
 
 **Files:**
 - Create: `pkg/adt/impact.go`
@@ -119,7 +121,7 @@ func impactAdvice(s *ImpactSummary) string { /* per-tier fmt.Sprintf naming call
 
 ---
 
-### Task 2: ComputeWriteImpact — where-used leg (mocked HTTP)
+### Task 2: ComputeWriteImpact — where-used leg (mocked HTTP) ✅
 
 **Files:**
 - Modify: `pkg/adt/impact.go`
@@ -179,7 +181,7 @@ Stub `recentTransportTouches` returning nil so this task compiles.
 
 ---
 
-### Task 3: Transport-recency leg (E071→E070 via RunQuery)
+### Task 3: Transport-recency leg (E071→E070 via RunQuery) ✅
 
 **Files:**
 - Modify: `pkg/adt/impact.go`
@@ -195,7 +197,7 @@ Stub `recentTransportTouches` returning nil so this task compiles.
 
 ---
 
-### Task 4: Gate config plumbing
+### Task 4: Gate config plumbing ✅
 
 **Files:**
 - Modify: `pkg/adt/safety.go` (struct + validation), `pkg/config/systems.go` (fields `impact_gate`, `impact_threshold` — follow the safety-fields block added by PR #156 at `SystemConfig`), `cmd/vsp/main.go` (persistent flags `--impact-gate`, `--impact-threshold`, env `SAP_IMPACT_GATE`, `SAP_IMPACT_THRESHOLD` — register exactly where the PR-#156 safety flags are declared so propagation-to-subcommands is inherited)
@@ -205,7 +207,7 @@ Stub `recentTransportTouches` returning nil so this task compiles.
 
 ---
 
-### Task 5: Advisory wiring — WriteSource/EditSource paths
+### Task 5: Advisory wiring — WriteSource/EditSource paths ✅
 
 **Files:**
 - Modify: `pkg/adt/mutation_gate.go` (ctx marker), `pkg/adt/workflows_source.go` (compute at :261 area — the outer site that already calls `withMutationPackageChecked`; add `Impact *ImpactSummary \`json:"impact,omitempty"\`` to `WriteSourceResult` at :159), `pkg/adt/workflows_edit.go` (same at :163 / `EditSourceResult` :12)
@@ -232,7 +234,7 @@ func impactFromContext(ctx context.Context) *ImpactSummary {
 
 ---
 
-### Task 6: Advisory wiring — delete and rename paths
+### Task 6: Advisory wiring — delete and rename paths ✅
 
 **Files:**
 - Modify: `pkg/adt/crud.go` (outer sites :473 and :1207), `internal/mcp/handlers_crud.go:530` (replace the bare `"Object deleted successfully"` string with a small `DeleteResult{Success, Object, Impact}` marshaled like other handlers)
@@ -242,7 +244,7 @@ Same pattern as Task 5. Commit `feat(adt): advisory impact on delete and rename`
 
 ---
 
-### Task 7: Confirm-token store
+### Task 7: Confirm-token store ✅
 
 **Files:**
 - Create: `pkg/adt/impact_confirm.go`
@@ -256,7 +258,7 @@ Same pattern as Task 5. Commit `feat(adt): advisory impact on delete and rename`
 
 ---
 
-### Task 8: Block mode — checkMutation step 4
+### Task 8: Block mode — checkMutation step 4 ✅
 
 **Files:**
 - Modify: `pkg/adt/mutation_gate.go` (`checkMutation` :89 — after transportable-edit check), `pkg/adt/impact.go` (render block error text per design §Confirmation flow)
@@ -276,7 +278,7 @@ Same pattern as Task 5. Commit `feat(adt): advisory impact on delete and rename`
 
 ---
 
-### Task 9: Surface the confirm parameter (MCP + CLI)
+### Task 9: Surface the confirm parameter (MCP + CLI) ✅
 
 **Files:**
 - Modify: `internal/mcp/tools_register.go` (optional `confirm` string on WriteSource, EditSource, DeleteObject, Rename tools), `internal/mcp/handlers_source.go` / `handlers_crud.go` (read `confirm`, apply `adt.WithImpactConfirm`), `internal/mcp/handlers_universal.go` (pass `params.confirm` through — params already flow to handlers, verify only), `cmd/vsp/cli.go` (`--confirm-impact` on the source write / delete / rename commands; print one-line risk summary on gated ops when gate ≠ off)
@@ -284,11 +286,13 @@ Same pattern as Task 5. Commit `feat(adt): advisory impact on delete and rename`
 
 **Addition (from Task 8b):** the `confirm` param must ALSO be registered on the UpdateSource, UpdateClassInclude, ImportFromFile, DeployZip, WriteProgram, WriteClass, InstallZADTVSP, and InstallDummyTest tools — any tool that can surface an ImpactBlockedError (all of them funnel into the primitive-gated `Client.UpdateSource` or `Client.UpdateClassInclude`), so every block response has a retry path with the token. (InstallZADTVSP and InstallDummyTest were missing from this list originally — both upsert via WriteSource, so their re-install/update path is primitive-gated; added in the Task 9 review follow-up.)
 
+**As-built deviations (Task 9, both justified):** (1) The plan named `cmd/vsp/cli.go` flags on "source write / delete / rename commands" — no CLI delete or rename commands exist, so `--confirm-impact` landed in `cmd/vsp/devops.go` on `source write`, `source edit`, and `deploy` (the three CLI commands that can reach the gated primitives); `source write`/`source edit` additionally print a one-line advisory impact summary to stderr. The flag's help documents that the token store is per-process, so one-shot CLI runs can never redeem a token from a previous run — the flag is interface parity for a future serve mode; block-mode CLI operators lower `--impact-gate` for the invocation instead. (2) `DeployFromFile` was added to the confirm tool list (it reaches the gated primitives via `UpdateFromFile` but appeared in neither the base list nor the Task 8b addition) — the final list is 13 tools: WriteSource, EditSource, UpdateSource, DeleteObject, RenameObject, UpdateClassInclude, WriteProgram, WriteClass, DeployFromFile, ImportFromFile, DeployZip, InstallZADTVSP, InstallDummyTest.
+
 **Commit:** `feat(mcp,cli): impact confirm parameter`.
 
 ---
 
-### Task 10: Docs, skills, counts
+### Task 10: Docs, skills, counts ✅
 
 **Also (added 2026-08-15, user request): finalize the design docs to as-built state** — update `docs/plans/2026-08-15-impact-gated-writes-design.md` where implementation diverged or sharpened the spec: DeleteObjectWithResult wrapper (MCP-only; internal deletes uninstrumented), origin-bound ctx marker (op+objectURL identity so renames confirm once), canonicalized 128-bit tokens, the checkSafety pre-guard (no impact traffic on policy-refused writes), include/CDS identity derivation, and the delete-window CSRF caveat. The design doc must read as documentation of what shipped, not a proposal.
 

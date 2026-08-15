@@ -5,6 +5,8 @@ description: "Deploy ABAP objects through full quality gates: syntax check, acti
 
 > **System profile:** before generating release-specific syntax or proposing transport/feature workflows, read `.claude/vsp-system-profile.md` if it exists; if it's missing and the task is release- or feature-sensitive, run the **bootstrap-system-context** skill first.
 
+> **Impact gate:** when a write result carries `impact.risk: "high"`, read 2-3 key callers and run unit tests on the affected packages before proceeding; on an `IMPACT GATE` refusal, surface the report to the user and retry with the `confirm` token only once proceeding is justified.
+
 Deploy an ABAP object through the full quality gate pipeline.
 
 ## Workflow

@@ -21,6 +21,8 @@ These tools replace 11 granular read/write operations with intelligent parameter
 
 **RAP Support (NEW):** WriteSource now supports creating and updating CDS views (DDLS), behavior definitions (BDEF), and service definitions (SRVD).
 
+**Impact-gated writes:** with `--impact-gate advise|block`, write results carry an `impact` blast-radius block (callers, packages, recent transports, risk tier, advice). In `block` mode a high-impact write is refused with an `impact-confirm-...` token; the 13 gated write tools — `WriteSource`, `EditSource`, `UpdateSource`, `DeleteObject`, `RenameObject`, `UpdateClassInclude`, `WriteProgram`, `WriteClass`, `DeployFromFile`, `ImportFromFile`, `DeployZip`, `InstallZADTVSP`, `InstallDummyTest` — accept an optional `confirm` parameter to retry the identical call with that token. The hyperfocused SAP tool forwards `params.confirm` for the same actions.
+
 ---
 
 ## Search & Grep Tools (4 tools)
