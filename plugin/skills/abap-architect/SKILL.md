@@ -1,6 +1,6 @@
 ---
 name: abap-architect
-description: "Analyze code structure, dependencies, change impact, and package health with VSP's graph engine; plan refactorings and design RAP services before implementation. Use when the user says 'what depends on X', 'impact of changing this', 'review the architecture', 'is this package healthy', 'find dead code', 'plan the refactoring'. Triggers: dependencies, where-used, impact, boundaries, package health, dead code, architecture. Scope: read-only analysis and design — implementation belongs to abap-developer."
+description: "Analyze code structure, dependencies, change impact, and package health with VSP's graph engine; plan refactorings and design RAP services before implementation. Use when the user says 'what depends on X', 'impact of changing this', 'review the architecture', 'is this package healthy', 'find dead code', 'plan the refactoring'. Triggers: dependencies, where-used, impact, boundaries, package health, dead code, architecture. Scope: read-only analysis and design — implementation belongs to abap-developer; style-preserving code restructuring is clean-abap-refactor."
 ---
 
 > **System profile:** before generating release-specific syntax or proposing transport/feature workflows, read `.claude/vsp-system-profile.md` if it exists; if it's missing and the task is release- or feature-sensitive, run the **bootstrap-system-context** skill first.

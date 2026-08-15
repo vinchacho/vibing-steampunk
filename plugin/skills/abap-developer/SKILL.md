@@ -14,7 +14,7 @@ For every development task, follow this sequence. Do NOT skip steps.
 ### 1. DISCOVER — Understand before acting
 
 - **SearchObject** — Always search first. Never create an object that already exists.
-- **GetSource** — Read existing code before modifying. For classes, ALWAYS use method-level operations (parameter `method` or `include_type`). Reading an entire class wastes 95% of tokens.
+- **GetSource** — Read existing code before modifying. For classes, ALWAYS use method-level operations (parameter `method` or `include`). Reading an entire class wastes 95% of tokens.
 - **GetObjectStructure** — Understand the object's components before editing.
 
 ### 2. CREATE or EDIT — Make changes surgically
@@ -70,7 +70,7 @@ For every development task, follow this sequence. Do NOT skip steps.
 
 | Type | Method-Level? | Parent Required? | Notes |
 |------|:------------:|:----------------:|-------|
-| CLAS | YES — always use | No | Use `method` param or `include_type` (definitions/implementations/testclasses) |
+| CLAS | YES — always use | No | Use `method` param or `include` (definitions/implementations/testclasses) |
 | PROG | No | No | Full source read/write |
 | INTF | No | No | Full source read/write |
 | FUNC | No | YES — needs FUGR name as `parent` | Read-only via GetSource; use WriteSource for edits |
@@ -122,6 +122,8 @@ Implement against the contract. Verify against the contract. Report completion a
 ## RAP Development Pattern
 
 For RAP (RESTful ABAP Programming Model) objects, follow this order:
+> For initial RAP scaffolds prefer the **rap-bo-design** skill's whole-stack sequence (create all artifacts, then ActivateMultiple) — the per-object pattern below suits incremental changes to an existing stack.
+
 1. Create DDLS (CDS view) → Activate
 2. Create BDEF (behavior definition) → Activate
 3. Create implementation class → Activate
