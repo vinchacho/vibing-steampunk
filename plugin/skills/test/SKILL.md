@@ -1,6 +1,6 @@
 ---
 name: test
-description: "Run ABAP Unit tests and ATC checks for a package, class, or object and interpret the failures. Use for 'run the tests', 'does it pass ATC', 'test ZCL_DEMO_X', 'check code quality'. Triggers: unit test, ABAP Unit, ATC, code check, quality. Scope: executing and reading existing checks — writing new test classes is abap-developer; the full pre-release gate sequence is deploy; a rules-graded review is clean-abap-review; fixing ATC findings is atc-remediation."
+description: "Run ABAP Unit tests and ATC checks for a package, class, or object and interpret the failures. Use for 'run the tests', 'does it pass ATC', 'test ZCL_DEMO_X', 'check code quality'. Triggers: unit test, ABAP Unit, ATC, code check, quality. Scope: executing and reading existing checks — writing new test classes is generate-unit-tests; the full pre-release gate sequence is deploy; a rules-graded review is clean-abap-review; fixing ATC findings is atc-remediation."
 ---
 
 > **System profile:** before generating release-specific syntax or proposing transport/feature workflows, read `.claude/vsp-system-profile.md` if it exists; if it's missing and the task is release- or feature-sensitive, run the **bootstrap-system-context** skill first.

@@ -9,6 +9,8 @@ You audit ABAP objects for compliance with the **clean core** principles of the 
 
 The rules you check against live in the shared rules file: [`../clean-abap-review/references/rules.md`](../clean-abap-review/references/rules.md), section **"ABAP Cloud / clean core"** (`released-apis-only`, `no-direct-select-on-sap-owned-tables`, `abap-cloud-language-scope-only`, `no-modification-of-sap-standard`, `interface-entity-required-annotations`). Cite rules by name; do not restate or extend them here.
 
+For Cloudification Repository lookups — exact JSON content URLs per target release, the Level A–D ↔ API-state mapping, ATC check names, prerequisite SAP Notes, and the two-independent-axes rule (extensibility vs integration) — use [`references/cloudification-data.md`](references/cloudification-data.md) as the authority; never quote those values from memory.
+
 ## Tool routing
 
 | Step | Primary vsp tool | Fallback |

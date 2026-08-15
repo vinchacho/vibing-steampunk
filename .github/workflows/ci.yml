@@ -27,3 +27,20 @@ jobs:
 
       - name: Test
         run: go test ./...
+
+  validate-skills:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            skills:
+              - 'plugin/**'
+              - 'scripts/validate-skills.py'
+
+      - name: Validate skills
+        if: steps.changes.outputs.skills == 'true'
+        run: python3 scripts/validate-skills.py

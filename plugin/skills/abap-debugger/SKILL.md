@@ -46,7 +46,7 @@ If nothing recent changed (or if the regression is older than your revision hist
 
 | Step | Tool | Purpose |
 |------|------|---------|
-| 5 | **SetExternalBreakpoint** | Set breakpoint BEFORE the failure line |
+| 5 | **SetBreakpoint** | Set breakpoint BEFORE the failure line |
 | 6 | **RunUnitTests** | Execute tests to trigger the code path |
 
 Breakpoint types available:
