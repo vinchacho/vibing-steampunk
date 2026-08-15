@@ -10,13 +10,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/cobra"
 	embedded "github.com/vinchacho/vibing-steampunk/embedded/abap"
 	"github.com/vinchacho/vibing-steampunk/embedded/deps"
 	installer "github.com/vinchacho/vibing-steampunk/internal/install"
 	"github.com/vinchacho/vibing-steampunk/pkg/adt"
 	"github.com/vinchacho/vibing-steampunk/pkg/ctxcomp"
 	"github.com/vinchacho/vibing-steampunk/pkg/graph"
-	"github.com/spf13/cobra"
 )
 
 // --- source subcommands ---
@@ -1379,7 +1379,7 @@ func printTRBoundariesMarkdown(report *graph.TransportBoundaryReport, details bo
 // tokens are minted and kept in the refusing process's memory, so a
 // one-shot CLI run (a fresh process) can never present a token that a
 // previous run issued.
-const confirmImpactFlagHelp = "Impact-gate confirmation token (impact-confirm-...) from a prior blocked attempt. Only effective against a long-running vsp process; one-shot CLI runs cannot complete a confirm round-trip — lower --impact-gate for that invocation instead."
+const confirmImpactFlagHelp = "Impact-gate confirmation token (impact-confirm-...) from a prior blocked attempt. The token store is per-process, so in today's one-shot CLI usage a fresh run can never redeem a token issued by a previous run — the flag exists for interface parity and a future long-running serve mode. Under a block-mode gate, lower --impact-gate for the invocation instead."
 
 // confirmImpactContext returns the command context, wrapped with the
 // --confirm-impact token when the flag is set.

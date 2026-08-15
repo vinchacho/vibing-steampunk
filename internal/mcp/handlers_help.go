@@ -78,7 +78,10 @@ Service binding:
 Impact gate:
   If a write is refused with "IMPACT GATE" and a token (impact-confirm-...),
   review the cited callers, then retry the identical call with the token:
-  SAP(action="edit", target="PROG ZREPORT", params={"source": "...", "confirm": "impact-confirm-..."})`)
+  SAP(action="edit", target="PROG ZREPORT", params={"source": "...", "confirm": "impact-confirm-..."})
+  params.confirm is accepted by every gated write action, not just edit:
+  delete, rename, deploy_from_file, deploy_zip, class-include edits
+  (CLAS_INCLUDE), and write_program/write_class all take it the same way.`)
 
 	case "create":
 		return mcp.NewToolResultText(`SAP(action="create") - Create new objects

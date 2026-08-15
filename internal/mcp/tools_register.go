@@ -2152,6 +2152,7 @@ func (s *Server) registerInstallTools(shouldRegister func(string) bool) {
 			mcp.WithBoolean("check_only",
 				mcp.Description("Only check prerequisites without deploying (default: false)"),
 			),
+			confirmParam(),
 		), s.handleInstallZADTVSP)
 	}
 
@@ -2185,6 +2186,7 @@ func (s *Server) registerInstallTools(shouldRegister func(string) bool) {
 			mcp.WithBoolean("cleanup",
 				mcp.Description("Delete test objects after verification (default: false)"),
 			),
+			confirmParam(),
 		), s.handleInstallDummyTest)
 	}
 

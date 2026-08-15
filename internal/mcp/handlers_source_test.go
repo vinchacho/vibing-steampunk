@@ -168,7 +168,9 @@ func resultText(t *testing.T, result *mcp.CallToolResult) string {
 // TestHandleWriteSourceImpactConfirmRoundTrip is the MCP-layer contract for
 // the confirm parameter: (a) under gate=block a high-risk WriteSource is
 // refused with a tool error carrying an impact-confirm token; (b) the
-// identical call with `confirm` set to that token succeeds.
+// identical call with `confirm` set to that token succeeds; (c) reusing
+// the consumed token re-blocks with a fresh token — the handler layer
+// never caches or resurrects the confirmed ctx.
 func TestHandleWriteSourceImpactConfirmRoundTrip(t *testing.T) {
 	s := newImpactGateTestServer()
 	args := map[string]any{
@@ -203,6 +205,18 @@ func TestHandleWriteSourceImpactConfirmRoundTrip(t *testing.T) {
 	}
 	if text := resultText(t, retry); !strings.Contains(text, `"success": true`) {
 		t.Fatalf("confirmed retry text lacks success marker: %s", text)
+	}
+
+	// (c) third call reusing the consumed token: re-blocked with a fresh token.
+	reuse, err := s.handleWriteSource(context.Background(), newRequest(args))
+	if err != nil {
+		t.Fatalf("token-reuse call transport error = %v", err)
+	}
+	if !reuse.IsError {
+		t.Fatalf("token reuse: IsError = false, text: %s", resultText(t, reuse))
+	}
+	if reissued := testImpactTokenPattern.FindString(resultText(t, reuse)); reissued == "" || reissued == token {
+		t.Fatalf("token reuse must re-block with a fresh token, got %q (consumed %q)", reissued, token)
 	}
 }
 
