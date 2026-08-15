@@ -1,0 +1,22 @@
+{
+  "name": "vsp-abap-developer",
+  "version": "1.0.0",
+  "description": "SAP ABAP development workflows and domain knowledge for the VSP MCP server.",
+  "author": {
+    "name": "Vincent Segami"
+  },
+  "homepage": "https://github.com/vinchacho/vibing-steampunk",
+  "repository": "https://github.com/vinchacho/vibing-steampunk",
+  "license": "MIT",
+  "keywords": ["sap", "abap", "adt", "vsp", "mcp", "development", "debugging"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "VSP ABAP Developer",
+    "shortDescription": "Develop and debug SAP ABAP through VSP.",
+    "longDescription": "VSP domain knowledge, ABAP development and debugging roles, quality-gated commands, and CBA enterprise guidance.",
+    "developerName": "Vincent Segami",
+    "category": "Developer Tools",
+    "capabilities": ["Skills", "SAP ABAP", "VSP MCP workflows"],
+    "defaultPrompt": "Use VSP to inspect this SAP ABAP task and recommend the safest next action."
+  }
+}
