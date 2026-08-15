@@ -1,7 +1,9 @@
 package adt
 
 import (
+	"context"
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -55,6 +57,51 @@ func classifyImpactRisk(s *ImpactSummary) string {
 	default:
 		return riskLow
 	}
+}
+
+// ComputeWriteImpact builds the blast-radius summary for objectURL. It never
+// returns an error: failures degrade to Available=false (design §Degradation
+// ladder) so a broken where-used lookup can annotate but never fail a write.
+// ownPackage is the object's package from the mutation context ("" if unknown).
+func (c *Client) ComputeWriteImpact(ctx context.Context, objectURL, objectName, tadirType, ownPackage string) *ImpactSummary {
+	s := &ImpactSummary{Object: objectName}
+	// line=0, column=0 → FindReferences omits the #start fragment and queries
+	// usages of the whole object rather than a symbol at a position.
+	refs, err := c.FindReferences(ctx, objectURL, 0, 0)
+	if err != nil {
+		s.Unavailable = fmt.Sprintf("where-used lookup failed: %v", err)
+		s.Risk = classifyImpactRisk(s)
+		s.Advice = impactAdvice(s)
+		return s
+	}
+	s.Available = true
+	pkgs := map[string]bool{}
+	for _, r := range refs {
+		if r.Name == objectName {
+			continue // where-used lists the queried object itself; not a caller
+		}
+		s.Callers++
+		if r.PackageName != "" {
+			pkgs[r.PackageName] = true
+			if ownPackage != "" && r.PackageName != ownPackage {
+				s.CrossPackage = true
+			}
+		}
+	}
+	for p := range pkgs {
+		s.Packages = append(s.Packages, p)
+	}
+	sort.Strings(s.Packages)
+	s.RecentTransports = c.recentTransportTouches(ctx, tadirType, objectName)
+	s.Risk = classifyImpactRisk(s)
+	s.Advice = impactAdvice(s)
+	return s
+}
+
+// recentTransportTouches returns transports that recently carried the object.
+// Task 3 implements the E071→E070 lookup; until then summaries are refs-only.
+func (c *Client) recentTransportTouches(_ context.Context, _, _ string) []TransportTouch {
+	return nil
 }
 
 // impactAdvice renders one agent-directed sentence for the summary's risk tier.
