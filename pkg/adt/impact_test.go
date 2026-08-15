@@ -23,10 +23,12 @@ func TestClassifyImpactRisk(t *testing.T) {
 		{"many callers", ImpactSummary{Available: true, Callers: 25}, "high"},
 		{"cross-package with recent transport", ImpactSummary{Available: true, Callers: 6, CrossPackage: true,
 			RecentTransports: []TransportTouch{{Transport: "TR-EXAMPLE"}}}, "high"},
+		{"just under high", ImpactSummary{Available: true, Callers: 24}, "medium"},
 		{"few callers", ImpactSummary{Available: true, Callers: 5}, "medium"},
 		{"transport touch only", ImpactSummary{Available: true, Callers: 0,
 			RecentTransports: []TransportTouch{{Transport: "TR-EXAMPLE"}}}, "medium"},
 		{"quiet object", ImpactSummary{Available: true, Callers: 4}, "low"},
+		{"cross-package, no transport", ImpactSummary{Available: true, Callers: 0, CrossPackage: true}, "low"},
 		{"unavailable", ImpactSummary{Available: false}, "unknown"},
 	}
 	for _, tt := range tests {

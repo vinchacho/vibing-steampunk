@@ -33,18 +33,27 @@ const (
 	impactMediumCallers = 5
 )
 
+// Risk tier names. Task 4 compares these against configured thresholds —
+// consts prevent typo bugs in tier lookups.
+const (
+	riskHigh    = "high"
+	riskMedium  = "medium"
+	riskLow     = "low"
+	riskUnknown = "unknown"
+)
+
 func classifyImpactRisk(s *ImpactSummary) string {
 	if !s.Available {
-		return "unknown"
+		return riskUnknown
 	}
 	touched := len(s.RecentTransports) > 0
 	switch {
 	case s.Callers >= impactHighCallers || (s.CrossPackage && touched):
-		return "high"
+		return riskHigh
 	case s.Callers >= impactMediumCallers || touched:
-		return "medium"
+		return riskMedium
 	default:
-		return "low"
+		return riskLow
 	}
 }
 
@@ -73,10 +82,10 @@ func impactAdvice(s *ImpactSummary) string {
 	if len(s.Packages) > 0 {
 		testTarget = s.Packages[0]
 	}
-	switch s.Risk {
-	case "high":
+	switch classifyImpactRisk(s) {
+	case riskHigh:
 		return fmt.Sprintf("High impact: %d callers%s%s — read 2-3 key callers before editing and run unit tests on %s after activation.", s.Callers, spread, recency, testTarget)
-	case "medium":
+	case riskMedium:
 		return fmt.Sprintf("Medium impact: %d callers%s%s — skim the main callers and run unit tests on %s after activation.", s.Callers, spread, recency, testTarget)
 	default:
 		return fmt.Sprintf("Low impact: %d callers%s%s — safe to proceed.", s.Callers, spread, recency)
