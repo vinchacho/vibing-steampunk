@@ -1,15 +1,12 @@
 # Roadmap: vsp Development Plan
 
-> Last Updated: 2025-12-21
+> Last Updated: 2026-08-16
 
-## Current Status: v2.15.0
+> **Current planning lives in [reports/2026-07-11-001-improvement-plan-and-landscape.md](reports/2026-07-11-001-improvement-plan-and-landscape.md) and [reports/2026-08-15-001-sap-mcp-skills-landscape-and-roadmap.md](reports/2026-08-15-001-sap-mcp-skills-landscape-and-roadmap.md).** The phase list below is kept as historical structure; do not treat its unchecked items or dates as commitments.
 
-| Metric | Value |
-|--------|-------|
-| MCP Tools | 94 |
-| Unit Tests | 244 |
-| Platforms | Linux, macOS, Windows (x64, ARM64) |
-| Phase | 5 - TAS-Style Debugging ✅ |
+## Current Status
+
+See the **Project Status** table in [CLAUDE.md](CLAUDE.md) — version, tool modes/counts, test counts, and platforms are maintained there (code-derived, re-measured on update) rather than duplicated here.
 
 ---
 
@@ -55,9 +52,9 @@
 - [x] TraceExecution composite RCA tool
 - [x] Static vs actual call graph comparison
 
-### Phase 5: TAS-Style Debugging (v2.14-2.15) ✅
+### Phase 5: TAS-Style Debugging (v2.14-2.15) ⚠️ Partial (see 5.2–5.4)
 
-**Goal:** Scriptable, replayable debugging inspired by Tool-Assisted Speedruns.
+**Goal:** Scriptable, replayable debugging — record, checkpoint, and replay execution deterministically.
 
 #### 5.1 Lua Scripting Integration
 - [x] Integrate gopher-lua into vsp
@@ -78,9 +75,12 @@ end
 **Effort:** 2 weeks
 **Files:** `pkg/scripting/lua.go`, `internal/mcp/lua_bindings.go`
 
-#### 5.2 Variable History Recording
+#### 5.2 Variable History Recording ⚠️ Partial
+
+> Data model and storage shipped; live capture from a debug session is not yet wired in — see [reports/2026-07-11-002-vision-achievability-review.md](reports/2026-07-11-002-vision-achievability-review.md) §3.1.
+
 - [x] Design execution frame structure
-- [x] Implement frame capture at each debug step
+- [ ] Implement frame capture at each debug step (data model shipped, live capture unwired)
 - [x] Delta compression for storage efficiency
 - [x] "Show state at step N" command
 
@@ -97,14 +97,17 @@ type ExecutionFrame struct {
 **Effort:** 2 weeks
 **Files:** `pkg/adt/recorder.go`, `pkg/adt/history.go`
 
-#### 5.3 Checkpoint System
+#### 5.3 Checkpoint System ⚠️ Partial
+
+> Serialization and storage shipped; capture/restore against a live session depends on the unwired capture path above — see [reports/2026-07-11-002-vision-achievability-review.md](reports/2026-07-11-002-vision-achievability-review.md) §3.1.
+
 - [x] Serialize variable state to JSON
 - [x] Store checkpoints locally (in-memory + file)
-- [x] Restore checkpoint (variable inspection)
+- [ ] Restore checkpoint (variable inspection) — pending live-session wiring
 - [x] Checkpoint management commands (save/get/list)
 
-#### 5.4 Watchpoint Scripting
-- [x] Scriptable watchpoint conditions
+#### 5.4 Watchpoint Scripting ⚠️ Partial
+- [ ] Scriptable watchpoint conditions — partial
 - [x] All breakpoint types: line, statement, exception, message, BAdi, enhancement, watchpoint, method
 - [x] 8 breakpoint type functions in Lua
 
@@ -279,18 +282,20 @@ forceReplay("production_dump_001")  -- Inject and debug!
 
 ---
 
-## Milestones
+## Milestones (historical — dates withdrawn)
 
-| Milestone | Target | Description |
+> These target dates have passed without the Phase 6–8 milestones shipping and are **withdrawn**. Current planning: [reports/2026-07-11-001-improvement-plan-and-landscape.md](reports/2026-07-11-001-improvement-plan-and-landscape.md) and [reports/2026-08-15-001-sap-mcp-skills-landscape-and-roadmap.md](reports/2026-08-15-001-sap-mcp-skills-landscape-and-roadmap.md).
+
+| Milestone | ~~Target~~ | Description |
 |-----------|--------|-------------|
-| v2.14 | Jan 2026 | Lua scripting MVP |
-| v2.15 | Feb 2026 | Variable history recording |
-| v2.16 | Mar 2026 | Checkpoint/restore |
-| v3.0 | Apr 2026 | Test case extraction |
-| v3.1 | May 2026 | ABAP mock framework |
-| v3.2 | Jun 2026 | Isolated playground MVP |
-| v3.5 | Sep 2026 | Playground REPL |
-| v4.0 | Dec 2026 | Time-travel debugging |
+| v2.14 | ~~Jan 2026~~ | Lua scripting MVP (shipped) |
+| v2.15 | ~~Feb 2026~~ | Variable history recording (partial — see 5.2) |
+| v2.16 | ~~Mar 2026~~ | Checkpoint/restore (partial — see 5.3) |
+| v3.0 | ~~Apr 2026~~ | Test case extraction (not started) |
+| v3.1 | ~~May 2026~~ | ABAP mock framework (not started) |
+| v3.2 | ~~Jun 2026~~ | Isolated playground MVP (not started) |
+| v3.5 | ~~Sep 2026~~ | Playground REPL (not started) |
+| v4.0 | ~~Dec 2026~~ | Time-travel debugging (not started) |
 
 ---
 

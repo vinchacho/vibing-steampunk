@@ -1,16 +1,16 @@
 # ADR-003: ZADT-VSP Unified APC Handler
 
 **Date:** 2025-12-18
-**Status:** PROPOSAL / DESIGN DRAFT
+**Status:** ACCEPTED / IMPLEMENTED
 **Context:** Unified WebSocket handler for stateful SAP operations
 
 ---
 
-> **NOT VANILLA ADT - REQUIRES CUSTOM SAP DEVELOPMENT**
+> **OPTIONAL EXTENSION — CUSTOM SAP OBJECTS**
 >
-> This ADR proposes deploying custom ABAP objects (Z*) to the SAP system.
-> This is an **optional extension** for users who need capabilities beyond
-> standard ADT REST APIs.
+> This ADR was implemented by deploying custom ABAP objects (Z*) to the SAP system.
+> It is an **optional extension** for users who need capabilities beyond
+> standard ADT REST APIs; vanilla ADT operation works without it.
 
 ---
 
@@ -448,7 +448,12 @@ Implement a single unified APC handler that can be incrementally extended with n
 
 ## Status
 
-**PROPOSAL** - Awaiting decision on whether to pursue non-vanilla approach.
+**ACCEPTED / IMPLEMENTED** — The unified APC handler ships as the ZADT_VSP component.
+
+Implementation pointers:
+- **ABAP side:** `embedded/abap/zcl_vsp_apc_handler.clas.abap` (unified APC entry point) with domain service classes `zcl_vsp_debug_service`, `zcl_vsp_rfc_service`, `zcl_vsp_git_service`, `zcl_vsp_report_service`, `zcl_vsp_amdp_service`, `zcl_vsp_utils` (all under `embedded/abap/`; mirrored in `abap/src/zadt_vsp/`)
+- **Go client:** `pkg/adt/websocket.go`, `websocket_base.go`, `websocket_types.go`, `websocket_debug.go`, `websocket_rfc.go`, `amdp_websocket.go`
+- **Install:** `InstallZADTVSP` MCP tool / `internal/install/` primitives
 
 ## Related Documents
 

@@ -1,21 +1,21 @@
 # ADR-001: WebSocket/APC for Stateful ABAP Debugging
 
 **Date:** 2025-12-18
-**Status:** PROPOSAL / PARKED
+**Status:** ACCEPTED / IMPLEMENTED
 **Context:** External debugger limitations with HTTP transport
 
 ---
 
-> **IMPORTANT: NOT VANILLA ADT COMPATIBLE**
+> **OPTIONAL COMPONENT — NOT REQUIRED FOR VANILLA ADT USE**
 >
-> This ADR proposes a **theoretical architecture** that would require **custom ABAP
-> development** (Z* objects, WebSocket/APC handlers) on the SAP system.
+> This ADR was implemented as an **optional** WebSocket/APC component: custom ABAP
+> objects (ZADT_VSP, `embedded/abap/zcl_vsp_apc_handler.clas.abap` and the
+> `zcl_vsp_*_service` classes) installed on the SAP system, with the Go client in
+> `pkg/adt/websocket*.go`.
 >
-> This approach **breaks the vanilla ADT philosophy** - vsp currently requires NO custom
-> SAP objects and works purely via standard ADT REST APIs.
->
-> The current HTTP-based debugger tools work within vanilla ADT constraints (with known
-> session limitations).
+> Vanilla ADT operation is unaffected: without ZADT_VSP installed, vsp works purely
+> via standard ADT REST APIs, and the HTTP-based debugger tools continue to operate
+> within vanilla ADT constraints (with known session limitations).
 
 ---
 
@@ -186,14 +186,15 @@ Implement a stateful WebSocket/APC handler on the SAP side to maintain debugging
 - STRUST/SSL certificate management for secure WebSocket
 - Network infrastructure may block WebSocket upgrades
 
-## Status: PARKED
+## Status: ACCEPTED / IMPLEMENTED
 
-This ADR is parked pending:
-1. Assessment of actual debugging use case priority
-2. Availability of test system with APC support
-3. Decision on whether to invest in SAP-side development
+This ADR was implemented as the ZADT_VSP WebSocket/APC component (see ADR-003 for
+the unified handler design). Implementation: `pkg/adt/websocket.go`,
+`websocket_base.go`, `websocket_debug.go`, `websocket_rfc.go` (Go client) and
+`embedded/abap/zcl_vsp_apc_handler.clas.abap` plus service classes (ABAP side).
+It remains an optional install — vanilla ADT operation does not require it.
 
-The existing HTTP-based debugger works for:
+The HTTP-based debugger (no ZADT_VSP required) works for:
 - Setting and managing breakpoints
 - Listing breakpoints
 - Basic listener functionality

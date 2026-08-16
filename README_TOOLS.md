@@ -1,10 +1,13 @@
 # vsp Tool Reference
 
-Complete documentation for all 96 MCP tools available in vsp.
+Complete documentation for all 157 MCP tools available in vsp.
 
 **Mode Legend:**
-- **Focused** - Available in focused mode (48 tools, default)
-- **Expert** - Only available in expert mode (96 tools total)
+- **Focused** - Available in focused mode (103 whitelisted tools, plus the 3 always-on tools below)
+- **Expert** - Only available in expert mode (157 tools total: 154 mode-gated + 3 always-on)
+- **Always** - Registered in both focused and expert mode (`GetConnectionInfo`, `GetFeatures`, `GetAbapHelp`)
+
+> **Default mode is `hyperfocused`**: a single universal `SAP` tool that routes to all operations below. Use `--mode focused` or `--mode expert` to expose the individual tools documented here.
 
 ---
 
@@ -25,7 +28,7 @@ These tools replace 11 granular read/write operations with intelligent parameter
 
 ---
 
-## Search & Grep Tools (4 tools)
+## Search & Grep Tools (5 tools)
 
 | Tool | Description | Mode |
 |------|-------------|------|
@@ -44,7 +47,7 @@ These tools replace 11 granular read/write operations with intelligent parameter
 
 ---
 
-## Read Operations (15 tools)
+## Read Operations (18 tools)
 
 | Tool | Description | Mode |
 |------|-------------|------|
@@ -61,39 +64,49 @@ These tools replace 11 granular read/write operations with intelligent parameter
 | `GetTransaction` | Get transaction details | Expert |
 | `GetTypeInfo` | Get data type information | Expert |
 | `GetCDSDependencies` | Get CDS view dependency tree | Focused |
+| `GetCDSImpactAnalysis` | Get CDS view reverse dependencies (where-used / downstream consumers) | Focused |
+| `GetCDSElementInfo` | Get metadata for all elements (fields) of a CDS view: names, types, annotations | Focused |
+| `GetMessages` | Get all messages from an ABAP message class (SE91) | Focused |
+| `GetAPIReleaseState` | Check API release state for S/4HANA Clean Core / ABAP Cloud compatibility | Focused |
 | `RunQuery` | Execute freestyle SQL query | Focused |
 
 ---
 
-## System Information (2 tools) - NEW
+## System Information (5 tools)
 
 | Tool | Description | Mode |
 |------|-------------|------|
 | `GetSystemInfo` | Get SAP system information (SID, release, kernel, database) | Focused |
 | `GetInstalledComponents` | List installed software components with versions | Focused |
+| `GetConnectionInfo` | Get current MCP connection info: user, URL, client | Always |
+| `GetFeatures` | Probe SAP system for available optional capabilities (abapGit, RAP/OData, AMDP, UI5/BSP, CTS) | Always |
+| `GetAbapHelp` | Get ABAP keyword documentation (SAP Help Portal URL; real docs when ZADT_VSP is installed) | Always |
 
 ---
 
-## Code Analysis (7 tools) - NEW
+## Code Analysis (10 tools)
 
 | Tool | Description | Mode |
 |------|-------------|------|
 | `GetCallGraph` | Get call hierarchy (callers/callees) for methods/functions | Focused |
 | `GetObjectStructure` | Get object explorer tree structure | Focused |
-| `GetCallersOf` | Get who calls this object (static call graph - up traversal) | Expert |
-| `GetCalleesOf` | Get what this object calls (static call graph - down traversal) | Expert |
-| `AnalyzeCallGraph` | Get statistics about call graph (nodes, edges, depth, types) | Expert |
-| `CompareCallGraphs` | Compare static vs actual execution for test coverage analysis | Expert |
-| `TraceExecution` | **COMPOSITE RCA TOOL**: Static graph + trace + comparison for root cause analysis | Expert |
+| `GetCallersOf` | Get who calls this object (static call graph - up traversal) | Focused |
+| `GetCalleesOf` | Get what this object calls (static call graph - down traversal) | Focused |
+| `AnalyzeCallGraph` | Get statistics about call graph (nodes, edges, depth, types) | Focused |
+| `CompareCallGraphs` | Compare static vs actual execution for test coverage analysis | Focused |
+| `TraceExecution` | **COMPOSITE RCA TOOL**: Static graph + trace + comparison for root cause analysis | Focused |
+| `CheckBoundaries` | Analyze package boundary violations (same-package, SAP-standard, whitelisted, cross-package Z* deps, dynamic calls) | Focused |
+| `GraphStats` | Extract dependency statistics from ABAP source using the embedded parser (works offline) | Expert |
+| `GetContext` | Analyze source dependencies and return compressed public API contracts of referenced objects | Focused |
 
 ---
 
-## Development Tools (10 tools)
+## Development Tools (11 tools)
 
 | Tool | Description | Mode |
 |------|-------------|------|
 | `SyntaxCheck` | Check source code for syntax errors | Focused |
-| `Activate` | Activate an ABAP object | Expert |
+| `Activate` | Activate an ABAP object | Focused |
 | `ActivateMultiple` | Batch activate specific objects in one request (dependency-aware, like Eclipse) | Focused |
 | `ActivatePackage` | Batch activate all inactive objects in package | Focused |
 | `RunUnitTests` | Execute ABAP Unit tests | Focused |
@@ -128,7 +141,7 @@ These tools replace 11 granular read/write operations with intelligent parameter
 
 ---
 
-## CRUD Operations (5 tools)
+## CRUD Operations (7 tools)
 
 | Tool | Description | Mode |
 |------|-------------|------|
@@ -137,6 +150,8 @@ These tools replace 11 granular read/write operations with intelligent parameter
 | `CreateObject` | Create new object (program, class, interface, include, function group, function module, package, **DDLS, BDEF, SRVD, SRVB**) | Expert |
 | `UpdateSource` | Write source code | Expert |
 | `DeleteObject` | Delete an object | Expert |
+| `MoveObject` | Move an object to a different package (via ZADT_VSP WebSocket, TR_TADIR_INTERFACE) | Focused |
+| `RecoverFailedCreate` | Recover a zombie object left behind by a failed CreateObject (probe + compensating cleanup) | Expert |
 
 **RAP Object Creation (NEW):** CreateObject now supports:
 - `DDLS/DF` - CDS DDL Source (view definitions)
@@ -159,13 +174,14 @@ These tools replace 11 granular read/write operations with intelligent parameter
 
 ---
 
-## Class Include Operations (3 tools)
+## Class Include Operations (4 tools)
 
 | Tool | Description | Mode |
 |------|-------------|------|
 | `GetClassInclude` | Get class include (definitions, implementations, macros, testclasses) | Expert |
 | `CreateTestInclude` | Create test classes include | Expert |
 | `UpdateClassInclude` | Update class include source | Expert |
+| `GetClassComponents` | Get class structure: methods, attributes, events with visibility and properties | Expert |
 
 ---
 
@@ -183,7 +199,7 @@ Composite operations that combine multiple ADT API calls:
 
 ---
 
-## File-Based Deployment Tools (5 tools)
+## File-Based Deployment Tools (6 tools)
 
 Solves token limit problem for large files:
 
@@ -194,6 +210,7 @@ Solves token limit problem for large files:
 | `DeployFromFile` | Legacy name for ImportFromFile | Expert |
 | `SaveToFile` | Legacy name for ExportToFile | Expert |
 | `RenameObject` | Rename object by creating copy | Expert |
+| `DeployZip` | Deploy objects from an abapGit-format ZIP to a SAP package via ADT | Focused |
 
 **Supported Extensions:**
 - `.clas.abap` - Classes
@@ -214,14 +231,14 @@ Solves token limit problem for large files:
 | `FindDefinition` | Navigate to symbol definition | Focused |
 | `FindReferences` | Find all references to symbol | Focused |
 | `CodeCompletion` | Get code completion suggestions | Expert |
-| `PrettyPrint` | Format ABAP source code | Expert |
+| `PrettyPrint` | Format ABAP source code | Focused |
 | `GetPrettyPrinterSettings` | Get formatter settings | Expert |
 | `SetPrettyPrinterSettings` | Update formatter settings | Expert |
 | `GetTypeHierarchy` | Get type hierarchy (supertypes/subtypes) | Expert |
 
 ---
 
-## Transport Tools (3 tools)
+## Transport Tools (8 tools)
 
 | Tool | Description | Mode |
 |------|-------------|------|
@@ -229,7 +246,10 @@ Solves token limit problem for large files:
 | `GetTransportInfo` | Get transport details | Expert |
 | `ReleaseTransport` | Release transport | Expert |
 | `GetUserTransports` | List user's transports | Expert |
-| `GetInactiveObjects` | List inactive objects | Expert |
+| `GetInactiveObjects` | List inactive objects | Focused |
+| `ListTransports` | List modifiable transport requests for a user (requires transport flags) | Focused |
+| `GetTransport` | Get detailed transport information including objects and tasks | Focused |
+| `DeleteTransport` | Delete a modifiable transport request | Expert |
 
 ---
 
@@ -254,7 +274,7 @@ See [ExecuteABAP Implementation Report](reports/2025-12-05-004-execute-abap-impl
 
 | Tool | Description | Mode |
 |------|-------------|------|
-| `GetDumps` | List runtime errors with filters (user, exception type, program, date range) | Focused |
+| `ListDumps` | List runtime errors with filters (user, exception type, program, date range) | Focused |
 | `GetDump` | Get full details of a specific dump including stack trace | Focused |
 
 **Use Cases:**
@@ -284,6 +304,57 @@ See [ExecuteABAP Implementation Report](reports/2025-12-05-004-execute-abap-impl
 |------|-------------|------|
 | `GetSQLTraceState` | Check if SQL trace is currently active | Focused |
 | `ListSQLTraces` | List SQL trace files | Focused |
+
+---
+
+## ABAP Debugger Tools (10 tools)
+
+Session-based debugging via WebSocket connection to ZADT_VSP. **Requires ZADT_VSP installed on the SAP system.** Can be disabled with `--disabled-groups D`.
+
+| Tool | Description | Mode |
+|------|-------------|------|
+| `SetBreakpoint` | Set a breakpoint: 'line' (specific location), 'statement' (ABAP keyword), or 'exception' (exception class) | Focused |
+| `GetBreakpoints` | Get all breakpoints registered in the current debug session | Focused |
+| `DeleteBreakpoint` | Delete a breakpoint by ID | Focused |
+| `DebuggerListen` | Start a debug listener that waits (blocking, long-poll) for a debuggee to hit a breakpoint | Focused |
+| `DebuggerAttach` | Attach to a debuggee that has hit a breakpoint (use debuggee_id from DebuggerListen) | Focused |
+| `DebuggerDetach` | Detach from the current debug session and release the debuggee | Focused |
+| `DebuggerStep` | Perform a step operation in the debugger | Focused |
+| `DebuggerGetStack` | Get the current call stack during a debug session | Focused |
+| `DebuggerGetVariables` | Get variable values during a debug session ('@ROOT' for top-level variables) | Focused |
+| `CallRFC` | Call a function module via WebSocket — useful for triggering code execution to hit breakpoints | Focused |
+
+---
+
+## AMDP / HANA Debugger Tools (7 tools) - Experimental
+
+Debug AMDP (HANA SQLScript) procedures. **Experimental** — can be disabled with `--disabled-groups H`.
+
+| Tool | Description | Mode |
+|------|-------------|------|
+| `AMDPDebuggerStart` | Start an AMDP debug session with a persistent background session manager | Focused |
+| `AMDPDebuggerResume` | Get current AMDP debug session status | Focused |
+| `AMDPDebuggerStop` | Stop the AMDP debug session and clean up the server-side session | Focused |
+| `AMDPDebuggerStep` | Perform a step operation in the AMDP debugger | Focused |
+| `AMDPGetVariables` | Get variable values during AMDP debugging (scalar, table, and array types) | Focused |
+| `AMDPSetBreakpoint` | Set a breakpoint in AMDP (SQLScript) code by procedure name and line | Focused |
+| `AMDPGetBreakpoints` | Get all breakpoints registered in the current AMDP debug session | Focused |
+
+---
+
+## UI5 / BSP Management Tools (7 tools)
+
+Manage UI5/Fiori BSP applications. Can be disabled with `--disabled-groups 5` (or `U`).
+
+| Tool | Description | Mode |
+|------|-------------|------|
+| `UI5ListApps` | List UI5/Fiori BSP applications (supports wildcard query) | Focused |
+| `UI5GetApp` | Get details of a UI5/Fiori BSP application including file structure | Focused |
+| `UI5GetFileContent` | Get content of a specific file within a BSP application | Focused |
+| `UI5UploadFile` | Upload a file to a BSP application | Expert |
+| `UI5DeleteFile` | Delete a file from a BSP application | Expert |
+| `UI5CreateApp` | Create a new UI5/Fiori BSP application | Expert |
+| `UI5DeleteApp` | Delete a UI5/Fiori BSP application | Expert |
 
 ---
 
@@ -319,7 +390,26 @@ src/
 
 ---
 
-## Install/Setup Tools (3 tools) - NEW v2.17.0
+## gCTS Tools (10 tools)
+
+Git-enabled CTS repository management (S/4HANA systems with gCTS configured).
+
+| Tool | Description | Mode |
+|------|-------------|------|
+| `GctsListRepositories` | List all gCTS repositories (ID, name, URL, branch, status, role) | Focused |
+| `GctsGetRepository` | Get details of a specific gCTS repository including configuration | Focused |
+| `GctsCreateRepository` | Create a new gCTS repository | Expert |
+| `GctsDeleteRepository` | Delete a gCTS repository | Expert |
+| `GctsCloneRepository` | Clone a gCTS repository on the SAP system | Expert |
+| `GctsPull` | Pull changes into a gCTS repository, optionally to a specific commit | Expert |
+| `GctsCommit` | Create a commit in a gCTS repository | Expert |
+| `GctsListBranches` | List branches in a gCTS repository | Focused |
+| `GctsSwitchBranch` | Switch the active branch of a gCTS repository | Expert |
+| `GctsGetHistory` | Get commit history of a gCTS repository | Focused |
+
+---
+
+## Install/Setup Tools (4 tools)
 
 Deploy VSP components and dependencies to SAP systems via ADT.
 
@@ -328,6 +418,7 @@ Deploy VSP components and dependencies to SAP systems via ADT.
 | `InstallZADTVSP` | Deploy ZADT_VSP WebSocket handler (6 ABAP objects) | Focused |
 | `InstallAbapGit` | Deploy abapGit from embedded ZIP (standalone or dev edition) | Focused |
 | `ListDependencies` | List available dependencies for installation | Focused |
+| `InstallDummyTest` | Create a simple interface + class to verify the Install* workflow end-to-end | Focused |
 
 **InstallZADTVSP Parameters:**
 - `package` - Target package name (default: `$ZADT_VSP`)
@@ -385,14 +476,48 @@ Execute ABAP reports with parameters and capture ALV output. Includes async patt
 
 ---
 
+## Version History Tools (3 tools)
+
+| Tool | Description | Mode |
+|------|-------------|------|
+| `GetRevisions` | List version history of an object (versions, dates, authors, transports) | Focused |
+| `GetRevisionSource` | Get source code of a specific version of an object | Focused |
+| `CompareVersions` | Compare two versions of an object with unified diff ('current' for active version) | Focused |
+
+---
+
+## Testing & Quality Tools (3 tools)
+
+| Tool | Description | Mode |
+|------|-------------|------|
+| `GetCodeCoverage` | Run ABAP Unit tests with coverage enabled: line-level statement, branch, and procedure coverage | Focused |
+| `GetCheckRunResults` | Get detailed results for a check run (messages, line numbers, severity, summary) | Focused |
+| `AnalyzeABAPCode` | Static analysis of ABAP source for quality, performance, security, and robustness issues | Focused |
+
+---
+
+## Internationalization Tools (7 tools)
+
+| Tool | Description | Mode |
+|------|-------------|------|
+| `GetObjectTextsInLanguage` | Get object source/content in a specific language (overrides session language per request) | Focused |
+| `GetDataElementLabels` | Get data element labels (short/medium/long/heading) in a specific language | Focused |
+| `GetMessageClassTexts` | Get all messages of a message class in a specific language | Focused |
+| `WriteMessageClassTexts` | Update message class texts in a specific language (requires lock handle) | Expert |
+| `WriteDataElementLabels` | Update data element labels in a specific language (requires lock handle) | Expert |
+| `GetTextPool` | Get the text pool (text elements/symbols) of a program in a specific language | Focused |
+| `CompareLanguages` | Compare object text content in two languages to find missing/outdated translations | Focused |
+
+---
+
 ## Tool Count Summary
 
 | Mode | Tools | Description |
 |------|-------|-------------|
-| **Focused** | 54 | Essential tools for AI-assisted development |
-| **Expert** | 99 | All tools including low-level operations and RAP creation |
+| **Hyperfocused** (default) | 1 | Single universal `SAP` tool routing to all operations |
+| **Focused** | 106 | 103 whitelisted tools + 3 always-on system tools |
+| **Expert** | 157 | All tools: 154 mode-gated + 3 always-on |
 
-**Token Savings with Focused Mode:**
-- Tool definitions: 50% reduction (~5,000 → ~2,500 tokens)
-- Typical workflow: 60% reduction
-- Decision clarity: 48 choices instead of 96
+**Token Savings:**
+- Hyperfocused mode: one tool definition instead of 157
+- Focused mode: essential tools only — 106 choices instead of 157

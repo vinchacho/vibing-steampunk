@@ -15,8 +15,9 @@ flowchart TB
         Server[server.go<br/>Tool Registration]
 
         subgraph Modes["Operation Modes"]
-            Focused[Focused Mode<br/>19 Tools]
-            Expert[Expert Mode<br/>45 Tools]
+            Hyper[Hyperfocused Mode<br/>1 Universal SAP Tool - default]
+            Focused[Focused Mode<br/>103 Tools]
+            Expert[Expert Mode<br/>157 Tools]
         end
 
         Server --> Modes
@@ -53,7 +54,7 @@ flowchart TB
     HTTP <-->|HTTPS| ADTApi
 ```
 
-## Tool Categories (Focused Mode)
+## Tool Categories (Focused Mode — core subset shown)
 
 ```mermaid
 flowchart LR
@@ -210,9 +211,13 @@ flowchart TD
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                        internal/mcp/server.go                          │
-│                Mode-Aware Tool Registration (45 total)                 │
+│                     Mode-Aware Tool Registration                       │
 │      ┌─────────────────────────────────────────────────────┐           │
-│      │ Focused Mode (19 tools) - AI-Optimized              │           │
+│      │ Hyperfocused Mode (1 tool, DEFAULT)                  │           │
+│      │ • Single universal SAP tool routing to all handlers  │           │
+│      └─────────────────────────────────────────────────────┘           │
+│      ┌─────────────────────────────────────────────────────┐           │
+│      │ Focused Mode (103 tools) - AI-Optimized              │           │
 │      │ • Unified: GetSource, WriteSource                    │           │
 │      │ • Enhanced Search: GrepObjects, GrepPackages         │           │
 │      │ • File Ops: ImportFromFile, ExportToFile             │           │
@@ -222,7 +227,7 @@ flowchart TD
 │      │ • Advanced: Lock/Unlock, GetPackage, GetFunctionGrp │           │
 │      └─────────────────────────────────────────────────────┘           │
 │      ┌─────────────────────────────────────────────────────┐           │
-│      │ Expert Mode (45 tools) - Complete + Legacy          │           │
+│      │ Expert Mode (157 tools) - Complete                   │           │
 │      │ All focused tools + atomic operations + granular I/O│           │
 │      └─────────────────────────────────────────────────────┘           │
 └─────────────────────────────────────────────────────────────────────────┘
@@ -280,38 +285,44 @@ flowchart TD
 
 ```
 vibing-steampunk/
-├── cmd/vsp/
-│   └── main.go                  # CLI entry point (cobra/viper), auth handling
+├── cmd/
+│   ├── vsp/                  # Main CLI + MCP server (cli, devops, compile, deps, lsp, lua, workflow, ...)
+│   └── abapgit-pack/         # Standalone abapGit ZIP packer
 │
-├── internal/mcp/
-│   ├── server.go                # MCP server implementation (45 tool handlers, mode-aware)
-│   └── server_test.go           # Server unit tests
+├── internal/
+│   ├── mcp/                  # MCP server core + 37 handlers_*.go (one per domain: crud, git, graph, health, ...)
+│   ├── lsp/                  # ABAP LSP server (online diagnostics, go-to-definition)
+│   └── install/              # Fail-closed install primitives shared by CLI and MCP installers
 │
-├── pkg/adt/
-│   ├── client.go                # ADT client facade + read operations
-│   ├── client_test.go           # Client unit tests with mocks
-│   ├── config.go                # Configuration with functional options
-│   ├── config_test.go           # Config unit tests
-│   ├── cookies.go               # Cookie file parsing (Netscape format)
-│   ├── cookies_test.go          # Cookie parsing unit tests
-│   ├── http.go                  # HTTP transport (CSRF, sessions, auth)
-│   ├── http_test.go             # Transport unit tests
-│   ├── crud.go                  # CRUD operations (lock, create, update, delete)
-│   ├── devtools.go              # Dev tools (syntax check, activate, unit tests)
-│   ├── codeintel.go             # Code intelligence (find def, refs, completion)
-│   ├── workflows.go             # High-level workflow operations
-│   ├── xml.go                   # XML types and parsing
-│   ├── xml_test.go              # XML parsing tests
-│   └── integration_test.go      # Integration tests (requires SAP system)
+├── pkg/
+│   ├── adt/                  # ADT REST client (HTTP, CSRF, sessions, all SAP ops)
+│   ├── abaplint/             # Native Go ABAP static analysis: lexer, statement parser, lint rules
+│   ├── graph/                # Dependency graph engine: queries (slim/health/rename/impact/api-surface), builders, scopes
+│   ├── ctxcomp/              # Context compression: dep resolution + contract injection for GetSource
+│   ├── dsl/                  # Fluent API + YAML workflow engine, batch import/export, pipelines
+│   ├── cache/                # In-memory + SQLite cache
+│   ├── config/               # Multi-system profile management (add/list/switch)
+│   ├── scripting/            # Lua VM + 50+ ADT tool bindings, REPL
+│   ├── jseval/               # JavaScript evaluator
+│   ├── llvm2abap/            # LLVM IR → ABAP compiler (research)
+│   ├── ts2abap/              # TypeScript → ABAP transpiler (research)
+│   ├── ts2go/                # TypeScript → Go transpiler
+│   └── wasmcomp/             # WASM → ABAP AOT compiler
 │
-├── reports/                     # Project documentation and research
-│   ├── vsp-status.md     # Implementation status
-│   ├── cookie-auth-implementation-guide.md  # Cookie auth research
-│   └── *.md                     # Discovery and analysis documents
+├── embedded/
+│   ├── abap/                 # ABAP sources installed on SAP (ZADT_VSP service, debug, git, AMDP, reports, RFC)
+│   └── deps/                 # Embedded abapGit dependency ZIPs
 │
-├── build/                       # Cross-platform binaries (9 targets)
-├── Makefile                     # Build automation
-└── .gitignore                   # Excludes .env, cookies.txt, .mcp.json
+├── docs/                     # Architecture, ADRs, cli-agents guides (4 langs), reviewer guide
+├── contexts/                 # Session handoff notes (chronological)
+├── reports/                  # Research / design / status reports (YYYY-MM-DD-NNN-title.md)
+├── articles/                 # Published articles
+├── abap/src/zadt_vsp/        # ABAP source mirror in abapGit format
+├── scripts/                  # Sync upstream, release helpers
+│
+├── Makefile                  # Cross-compilation (9 platforms)
+├── ARCHITECTURE.md  ROADMAP.md  VISION.md  README_TOOLS.md
+└── .gitignore                # Excludes .env, cookies.txt, .mcp.json
 ```
 
 ## Component Details
@@ -329,9 +340,13 @@ Entry point for the MCP server with full CLI support:
 ### internal/mcp/server.go
 
 MCP protocol implementation:
-- Registers 19 tools (focused mode, default) or 45 tools (expert mode) with the MCP SDK
+- Registers tools per mode with the MCP SDK: `hyperfocused` (default — 1 universal SAP tool), `focused` (103 whitelisted tools), or `expert` (157 tools)
 - Maps tool calls to ADT client methods
 - Handles JSON-RPC communication
+
+### Safety: the mutation gate (`checkMutation`)
+
+Every write path in `pkg/adt/` (create, update, delete, edit, rename, activate-with-change) funnels through a single policy checkpoint, `checkMutation` in `pkg/adt/mutation_gate.go`, before touching the SAP system. The gate runs four checks in order: (1) an operation-type safety check (read-only mode, allowed/disallowed operation lists), (2) a package-ownership check that resolves the target object's package (from its ADT URL for existing objects, or the explicit package for creates) against the configured package allowlist, (3) a transportable-edit check when a transport request is supplied, and (4) an impact gate that, in block mode, refuses mutations at or above the configured risk threshold until the caller confirms with a one-time token — multi-step workflows (e.g. a rename's create/write/activate legs) are gated once at their origin so a single confirmation covers the whole logical write. Centralizing policy here means an individual mutator cannot forget a sub-check and silently bypass safety.
 
 ### pkg/adt/ - ADT Client Library
 
@@ -427,7 +442,7 @@ ADT XML types and parsing utilities for request/response handling.
 
 ## Testing
 
-### Unit Tests (154 tests)
+### Unit Tests (836 `func Test` functions across the repo, including the 50 integration tests below)
 
 **Mock-based testing** - No SAP system required
 - Mock HTTP transport intercepts network calls
@@ -436,7 +451,7 @@ ADT XML types and parsing utilities for request/response handling.
 - Run with: `go test ./...`
 - All tests run in CI/CD
 
-**Test files:**
+**Representative test files** (17 packages carry tests — see CLAUDE.md "Testing"):
 ```
 pkg/adt/
 ├── client_test.go         # Read operations (SearchObject, Get*)
@@ -496,7 +511,7 @@ result, err := client.GetSource(ctx, "PROG", "ZTEST", &GetSourceOptions{})
 - Deterministic (same results every time)
 - CI/CD friendly (no external dependencies)
 
-### Integration Tests (21+ tests)
+### Integration Tests (35 tests)
 
 **Real SAP system testing** - Full end-to-end verification
 - `integration_test.go` with build tag: `integration`

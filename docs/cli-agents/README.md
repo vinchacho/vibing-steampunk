@@ -535,7 +535,7 @@ export SAP_URL=https://your-sap-host:44300
 export SAP_USER=your-username
 export SAP_PASSWORD=your-password
 export SAP_CLIENT=001          # default
-export SAP_MODE=focused        # focused (100 tools) or expert (147)
+export SAP_MODE=focused        # hyperfocused (1 universal tool, default) · focused (103) · expert (157)
 ```
 
 More info: [VSP README](https://github.com/vinchacho/vibing-steampunk) | [MCP Usage Guide](https://github.com/vinchacho/vibing-steampunk/blob/main/MCP_USAGE.md)

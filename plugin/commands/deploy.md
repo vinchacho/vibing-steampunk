@@ -5,6 +5,8 @@ allowed-tools: Bash, Read, Grep
 argument-hint: <object_name> [--transport <transport_id>]
 ---
 
+> **Impact gate:** when a write result carries `impact.risk: "high"`, read 2-3 key callers and run unit tests on the affected packages before proceeding; on an `IMPACT GATE` refusal, surface the report to the user and retry with the `confirm` token only once proceeding is justified.
+
 Deploy an ABAP object through the full quality gate pipeline.
 
 ## Workflow
@@ -12,7 +14,7 @@ Deploy an ABAP object through the full quality gate pipeline.
 1. If no argument provided, ask the user what to deploy
 2. Use **GetSource** to verify the object exists and read current state
 3. Run **SyntaxCheck** — STOP if errors found, report them
-4. Run **Activate** — activate the object
+4. Run **Activate** — activate the object. For several mutually dependent objects (e.g. a program and its includes), use **ActivateMultiple** in one request instead — activating them one-by-one fails when they reference each other's symbols
 5. Run **RunUnitTests** — STOP if tests fail, report failures
 6. Run **RunATCCheck** — report P1/P2 findings as warnings
 7. If `--transport` specified or object is in a transportable package:
@@ -31,5 +33,5 @@ Deploy an ABAP object through the full quality gate pipeline.
 
 ```
 /vsp:deploy ZCL_INVOICE_PROCESSOR
-/vsp:deploy /CBA/CL_PAYMENT_HANDLER --transport DEVK900123
+/vsp:deploy ZCL_DEMO_PAYMENT_HANDLER --transport TR-EXAMPLE
 ```

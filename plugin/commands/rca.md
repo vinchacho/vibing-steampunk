@@ -19,7 +19,7 @@ Investigate a runtime error using the 4-phase Root Cause Analysis workflow.
 4. Analyze the code and propose likely root cause
 5. If WebSocket debugging is available (check **GetFeatures**):
    - Offer to reproduce with breakpoints (Phase 2-3 of RCA)
-   - Guide through: SetExternalBreakpoint → RunUnitTests → DebuggerListen → DebuggerAttach → inspect variables
+   - Guide through: SetBreakpoint → RunUnitTests → DebuggerListen → DebuggerAttach → inspect variables
 6. Propose a fix and offer to apply it
 
 ## Prerequisites

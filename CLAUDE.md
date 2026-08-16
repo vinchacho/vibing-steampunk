@@ -10,9 +10,9 @@
 
 | Metric | Value |
 |--------|-------|
-| **Latest version** | v2.39.0 |
-| **Modes** | `hyperfocused` (1 universal tool, **default**) · `focused` (103 whitelisted tools) · `expert` (154 registered tools; runtime count varies with feature detection and `--disabled-groups`) |
-| **Tests** | 834 `func Test` functions across 17 packages (incl. 48 integration tests behind the `integration` build tag) — `go test ./...` green as of 2026-08-15 |
+| **Latest version** | v2.39.0 (upstream sync baseline; fork unreleased — no tags published on the fork) |
+| **Modes** | `hyperfocused` (1 universal tool, **default**) · `focused` (103 whitelisted tools) · `expert` (157 registered tools: 154 gated + 3 always-on; runtime count varies with feature detection and `--disabled-groups`) |
+| **Tests** | 836 `func Test` functions across 17 packages (incl. 50 integration tests behind the `integration` build tag) — `go test ./...` green as of 2026-08-16 |
 | **Platforms** | 9 (cross-compiled via Makefile) |
 | **Reports** | 196 in `reports/` (185 dated `YYYY-MM-DD-NNN-title.md` + 11 reference) |
 | **Sync** | 0 commits behind upstream `oisee/vibing-steampunk` (last merge `b884ea7`, 2026-07-11) |
@@ -24,7 +24,7 @@
 Roadmap and rationale: [reports/2026-07-11-001-improvement-plan-and-landscape.md](reports/2026-07-11-001-improvement-plan-and-landscape.md). Upstream's own triage: [reports/2026-06-15-001-issue-pr-triage-and-roadmap.md](reports/2026-06-15-001-issue-pr-triage-and-roadmap.md).
 
 ### 1. Quality foundation
-- Routing tests for `internal/mcp/handlers_universal.go` (default mode is effectively untested — only `server_test.go` exists in `internal/mcp`)
+- Routing tests for `internal/mcp/handlers_universal.go` (partial coverage: `handlers_source_test.go` covers WriteSource validation and the impact-confirm round-trip incl. the universal `edit` route; broader universal routing is still thin)
 - Safe-by-default decision: `internal/mcp/server.go` defaults to `adt.UnrestrictedSafetyConfig()`; unused safe default at `pkg/adt/safety.go` (stderr warning ships now; flipping is a breaking change)
 - ~~Cherry-pick candidates #125/#120/#126~~ superseded: upstream PR #156 (safety/session audit) and #150 (ActivateMultiple) cherry-picked 2026-08-15 — see [reports/2026-08-15-001-sap-mcp-skills-landscape-and-roadmap.md](reports/2026-08-15-001-sap-mcp-skills-landscape-and-roadmap.md); re-triage #108/#145/#152, pick up #148/#153/#154
 
@@ -66,11 +66,13 @@ Key flags: `--mode focused|expert|hyperfocused`, `--read-only`, `--allowed-packa
 When updating the Project Status table, derive — never copy:
 
 ```bash
-grep -c 'shouldRegister("' internal/mcp/tools_register.go        # expert-mode registrations
+grep -c 'shouldRegister("' internal/mcp/tools_register.go        # expert-mode gated registrations
 grep -cE '^\s*"[A-Za-z0-9_]+":\s*true' internal/mcp/tools_focused.go  # focused whitelist
-grep -rE '^func Test' --include='*_test.go' . | wc -l             # test functions
+git grep -cE '^func Test' -- '*_test.go' | awk -F: '{s+=$2} END {print s}'  # test functions (tracked files only)
 ls reports/ | wc -l                                               # reports
 ```
+
+Expert total = gated count + 3 always-on tools registered outside `shouldRegister` (`GetConnectionInfo`, `GetFeatures`, `GetAbapHelp` in `tools_register.go`). Some gated names delegate to `s.registerX()` helpers in other files, so `mcp.NewTool` counts in `tools_register.go` alone undercount — use the `shouldRegister` count plus the always-on tools.
 
 ---
 
@@ -96,7 +98,7 @@ SAP_URL=http://host:50000 SAP_USER=user SAP_PASSWORD=pass ./vsp
 | `SAP_COOKIE_FILE` / `--cookie-file` | Path to Netscape-format cookie file |
 | `SAP_COOKIE_STRING` / `--cookie-string` | Cookie string (key1=val1; key2=val2) |
 | `SAP_MODE` / `--mode` | Tool mode: `hyperfocused` (default since `880aa68`) · `focused` · `expert` — tool counts in Project Status |
-| `SAP_DISABLED_GROUPS` / `--disabled-groups` | Disable tool groups: `5`/`U`=UI5, `T`=Tests, `H`=HANA, `D`=Debug, `C`=CTS, `G`=Git, `R`=Reports, `I`=Install, `X`=Experimental |
+| `SAP_DISABLED_GROUPS` / `--disabled-groups` | Disable tool groups: `5`/`U`=UI5, `T`=Tests, `H`=HANA, `D`=Debug, `C`=CTS, `G`=Git, `GC`=gCTS, `R`=Reports, `I`=Install, `N`=i18n, `X`=Experimental |
 | `SAP_VERBOSE` / `--verbose` | Enable verbose logging to stderr |
 | **Safety Configuration** | |
 | `SAP_READ_ONLY` / `--read-only` | Block all write operations (default: false) |
@@ -104,10 +106,14 @@ SAP_URL=http://host:50000 SAP_USER=user SAP_PASSWORD=pass ./vsp
 | `SAP_ALLOWED_OPS` / `--allowed-ops` | Whitelist operation types (e.g., "RSQ") |
 | `SAP_DISALLOWED_OPS` / `--disallowed-ops` | Blacklist operation types (e.g., "CDUA") |
 | `SAP_ALLOWED_PACKAGES` / `--allowed-packages` | Restrict to packages (supports wildcards: "Z*") |
+| `SAP_ENABLE_TRANSPORTS` / `--enable-transports` | Enable transport management operations (default: false) |
+| `SAP_TRANSPORT_READ_ONLY` / `--transport-read-only` | Only allow read operations on transports (list, get) |
+| `SAP_ALLOWED_TRANSPORTS` / `--allowed-transports` | Restrict transport operations to specific transports (comma-separated, supports wildcards: "A4HK*") |
 | `SAP_ALLOW_TRANSPORTABLE_EDITS` / `--allow-transportable-edits` | Allow editing objects in transportable packages (default: false) |
 | `SAP_IMPACT_GATE` / `--impact-gate` | Blast-radius gate on writes: `off` (default) · `advise` (attach impact summary to write results) · `block` (additionally refuse high-impact writes until confirmed with the `confirm` token) |
 | `SAP_IMPACT_THRESHOLD` / `--impact-threshold` | Risk tier at which `--impact-gate=block` refuses: `high` (default) · `medium` (also gates unknown risk) |
 | **Feature Configuration (Safety Network)** | |
+| `SAP_FEATURE_HANA` / `--feature-hana` | HANA database detection: auto, on, off (default: auto) |
 | `SAP_FEATURE_ABAPGIT` / `--feature-abapgit` | abapGit integration: auto, on, off (default: auto) |
 | `SAP_FEATURE_RAP` / `--feature-rap` | RAP/OData development: auto, on, off (default: auto) |
 | `SAP_FEATURE_AMDP` / `--feature-amdp` | AMDP/HANA debugger: auto, on, off (default: auto) |
@@ -201,9 +207,9 @@ AMDP/HANA debugging uses a WebSocket connection to the ZADT_VSP APC handler inst
 
 ## Testing
 
-- **Unit tests:** `go test ./...` — 16 packages, notably `internal/mcp` (server/registration), `pkg/adt` (client, HTTP, safety, transport, codeintel, debugger), `pkg/cache`, `pkg/config`, `pkg/dsl`, `pkg/graph`, `pkg/scripting`.
+- **Unit tests:** `go test ./...` — 17 packages, notably `internal/mcp` (server/registration), `pkg/adt` (client, HTTP, safety, transport, codeintel, debugger), `pkg/cache`, `pkg/config`, `pkg/dsl`, `pkg/graph`, `pkg/scripting`.
 - **Integration tests:** `go test -tags=integration -v ./pkg/adt/` — create objects in `$TMP`, clean up after. Manual test program: `ZTEST_MCP_CRUD` in `$TMP`.
-- **Known gap:** `internal/mcp` handler routing (esp. `handlers_universal.go`) has no dedicated tests — see Current Priorities.
+- **Known gap:** `internal/mcp` handler routing (esp. `handlers_universal.go`) is only thinly tested — `handlers_source_test.go` covers WriteSource validation and the impact-confirm round-trip; broader routing coverage pending — see Current Priorities.
 
 ## ADT API Reference
 
@@ -319,10 +325,10 @@ This allows AI-driven debugging without manual SAP GUI interaction.
 
 | Area | Status |
 |------|--------|
-| Impact-gated writes | 🚧 `feature/impact-gated-writes` worktree — blast-radius summary on update/edit/delete/rename (`impact` block: callers, packages, transport recency, risk tier, agent advice), opt-in block gate with 128-bit confirm tokens; design: [docs/plans/2026-08-15-impact-gated-writes-design.md](docs/plans/2026-08-15-impact-gated-writes-design.md) |
+| Impact-gated writes | ✅ Merged — blast-radius summary on update/edit/delete/rename (impact block: callers, packages, transport recency, risk tier, agent advice), opt-in block gate with confirm tokens; SAP_IMPACT_GATE/SAP_IMPACT_THRESHOLD (see flags table); integration coverage in pkg/adt/integration_impact_test.go; design: [docs/plans/2026-08-15-impact-gated-writes-design.md](docs/plans/2026-08-15-impact-gated-writes-design.md) |
 | ActivateMultiple | ✅ Batch activation in one ADT request with mutual-dependency resolution (Eclipse parity); `ActivatePackage` rewired to use it; hyperfocused route `ACTIVATE_MULTI` (upstream PR #150, cherry-picked 2026-08-15) |
 | Write-safety & session hardening | ✅ Upstream PR #156 cherry-picked 2026-08-15: CSRF fetch stays in the stateful session (supersedes #120/#125), logical `Success=false` fails closed across ExecuteABAP/copy/deploy/rename/DSL/MCP WriteSource, persistent CLI safety flags, installer verification, per-system safety fields; audit: [reports/2026-08-15-002-upstream-vsp-bug-audit.md](reports/2026-08-15-002-upstream-vsp-bug-audit.md) — mocks-verified, live sandbox canary pending |
-| Claude Code plugin (`plugin/`) | ✅ `vsp-abap-developer` — 11 skills (incl. new `bootstrap-system-context` system-profile probe), trigger/scope description formula, Codex manifest; skills tracked + sanitized as of 2026-08-15 |
+| Claude Code plugin (`plugin/`) | ✅ `vsp-abap-developer` — 21 skills (incl. `bootstrap-system-context` system-profile probe), trigger/scope description formula, Codex manifest; `scripts/validate-skills.py` lints manifests in CI; skills tracked + sanitized as of 2026-08-15 |
 | Transport Changelog (v2.39.0) | ✅ `vsp changelog` / `vsp changes` — E070/E070A/E07T-driven package & CR-level change correlation |
 | `cr-config-audit` | ✅ v2a.1 — value-level literal match, L2 SQLite cache, 1-hop transitive reach, DDIC delivery-class filter |
 | RecoverFailedCreate | ✅ MCP primitive + `vsp recover-failed-create` CLI; reconciles partial-create on 5xx |

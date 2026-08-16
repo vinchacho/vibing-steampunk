@@ -1,6 +1,6 @@
 # vsp - Detailed Capabilities Reference
 
-**Document:** Technical Capabilities | **Version:** 1.0 | **Date:** 2026-01-19
+**Document:** Technical Capabilities | **Version:** 1.0 | **Date:** 2026-01-19 | **(snapshot as of v2.21, Feb 2026 — counts and features have moved on; see CLAUDE.md Project Status)**
 
 ---
 

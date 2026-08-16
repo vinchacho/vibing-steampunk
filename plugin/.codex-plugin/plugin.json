@@ -1,7 +1,7 @@
 {
   "name": "vsp-abap-developer",
-  "version": "1.0.0",
-  "description": "SAP ABAP development workflows and domain knowledge for the VSP MCP server.",
+  "version": "1.1.0",
+  "description": "SAP ABAP development workflows and domain knowledge for the VSP MCP server: 21 skills covering development, debugging, code quality, transports, performance diagnosis, test generation, and system profiling.",
   "author": {
     "name": "Vincent Segami"
   },
@@ -13,7 +13,7 @@
   "interface": {
     "displayName": "VSP ABAP Developer",
     "shortDescription": "Develop and debug SAP ABAP through VSP.",
-    "longDescription": "VSP domain knowledge, ABAP development and debugging roles, quality-gated commands, and CBA enterprise guidance.",
+    "longDescription": "21 skills for SAP ABAP work through VSP: domain knowledge, development, debugging, and architecture roles, quality-gated deploy and test commands, code quality review and remediation, transport analysis and review, performance diagnosis, unit test generation, system profiling, and CBA enterprise guidance.",
     "developerName": "Vincent Segami",
     "category": "Developer Tools",
     "capabilities": ["Skills", "SAP ABAP", "VSP MCP workflows"],

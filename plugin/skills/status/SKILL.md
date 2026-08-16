@@ -19,7 +19,7 @@ Display a comprehensive status report of the connected SAP system.
 
 ```
 System: <SID> (<release>) on <database>
-Mode: hyperfocused (1 universal SAP tool, default) | focused (~103 tools) | expert (~154 tools)
+Mode: hyperfocused (1 universal SAP tool, default) | focused (~103 tools) | expert (~157 tools)
 Auth: basic | cookie | browser SSO
 Safety: read-only | restricted to <packages> | unrestricted
 

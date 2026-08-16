@@ -6,9 +6,11 @@
 
 Imagine an AI assistant that doesn't just write ABAP code - it **understands**, **debugs**, **tests**, and **fixes** it autonomously. Not through copy-paste chatbot interactions, but through deep integration with the SAP runtime itself.
 
+> **Note:** The phase dates below are withdrawn. For what is achievable and how the phases have been rescoped, see [reports/2026-07-11-002-vision-achievability-review.md](reports/2026-07-11-002-vision-achievability-review.md).
+
 ---
 
-## Where We Are Today (v2.13)
+## Capability Snapshot (as of v2.13, December 2025)
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -32,7 +34,7 @@ Imagine an AI assistant that doesn't just write ABAP code - it **understands**, 
 
 ### Phase 1: TAS-Style Debugging (Q1 2026)
 
-**Tool-Assisted Superplay for ABAP** - Inspired by speedrunning tools.
+**Tool-Assisted Superplay for ABAP** - Scriptable, replayable, deterministic debugging.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐

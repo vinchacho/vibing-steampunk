@@ -101,7 +101,7 @@ The full version history is in [CHANGELOG.md](CHANGELOG.md).
 
 ### Hyperfocused Mode — 1 Tool to Rule Them All (Recommended)
 
-**Recommended for most setups.** Single `SAP(action, target, params)` tool replaces up to 147 individual tool definitions. Minimal token overhead, maximum capability.
+**Recommended for most setups.** Single `SAP(action, target, params)` tool replaces up to 157 individual tool definitions. Minimal token overhead, maximum capability.
 
 ```
 SAP(action="read",   target="CLAS ZCL_TRAVEL")
@@ -110,7 +110,7 @@ SAP(action="create", target="DEVC", params={"name": "$ZOZIK", "description": "Ne
 SAP(action="help",   target="debug")
 ```
 
-| Metric | Focused (100 tools) | Expert (147 tools) | Hyperfocused (1 tool) |
+| Metric | Focused (106 tools) | Expert (157 tools) | Hyperfocused (1 tool) |
 |--------|-------------------:|-------------------:|----------------------:|
 | MCP schema tokens | ~14,000 | ~40,000 | **~200** |
 | Reduction | — | — | **99.5%** |
@@ -303,7 +303,7 @@ See **[CLI Guide](docs/cli-guide.md)** for the complete reference with feature r
 | **API Surface** | `vsp api-surface` — Clean Core inventory: which standard APIs does your code use? |
 | **Graph Export** | 7 formats: mermaid, HTML, DOT (Graphviz), PlantUML, GraphML (Gephi), JSON, MD |
 | **Static Analysis** | `vsp analyze` — 13 lint rules in pure Go, no external dependencies |
-| **Hyperfocused Mode** | 1 universal SAP tool, **~200 tokens** vs ~40K for 147 tools |
+| **Hyperfocused Mode** | 1 universal SAP tool, **~200 tokens** vs ~40K for 157 tools |
 | **Context Compression** | Auto-compressed dependency contracts — 7–30x compression, built-in ABAP parser |
 | **Method-Level Surgery** | Read/edit individual methods — 95% token reduction vs full-class round-trips |
 | **ABAP LSP** | Built-in Language Server — real-time diagnostics, go-to-definition, context push |
@@ -529,7 +529,7 @@ Configure multiple SAP systems in `.vsp.json`:
 ```bash
 vsp --url https://host:44300 --user admin --password secret
 vsp --url https://host:44300 --cookie-file cookies.txt
-vsp --mode expert          # Enable all 147 tools
+vsp --mode expert          # Enable all 157 tools
 vsp --mode hyperfocused    # Single SAP tool (~200 tokens instead of ~40K)
 ```
 
@@ -562,6 +562,8 @@ SAP_PASSWORD=secret
 | `--allow-transportable-edits` | `SAP_ALLOW_TRANSPORTABLE_EDITS` | Enable editing transportable objects |
 | `--allowed-transports` | `SAP_ALLOWED_TRANSPORTS` | Whitelist transports (wildcards: `A4HK*`) |
 | `--allowed-packages` | `SAP_ALLOWED_PACKAGES` | Whitelist packages (wildcards: `Z*,$TMP`) |
+| `--impact-gate` | `SAP_IMPACT_GATE` | Blast-radius gate on writes: `off` (default), `advise`, `block` |
+| `--impact-threshold` | `SAP_IMPACT_THRESHOLD` | Risk tier at which `block` refuses writes: `high` (default), `medium` |
 
 </details>
 
@@ -699,7 +701,7 @@ One axis, three values — `--mode` or `SAP_MODE`:
 
 ```mermaid
 graph LR
-    F["focused<br/>100 tools<br/>~14K tokens"] --> E["expert<br/>147 tools<br/>~40K tokens"]
+    F["focused<br/>106 tools<br/>~14K tokens"] --> E["expert<br/>157 tools<br/>~40K tokens"]
     E --> H["hyperfocused<br/>1 tool<br/>~200 tokens<br/><i>recommended</i>"]
     style H fill:#2d6a4f,color:#fff,stroke:#4ade80,stroke-width:2px
     style F fill:#264653,color:#fff
@@ -708,7 +710,7 @@ graph LR
 
 | Aspect | Focused | Expert | Hyperfocused (recommended) |
 |--------|:-:|:-:|:-:|
-| **Tools** | 100 essential | 147 complete | 1 universal `SAP()` |
+| **Tools** | 106 essential | 157 complete | 1 universal `SAP()` |
 | **Schema tokens** | ~14K | ~40K | **~200** |
 | **How AI calls it** | `GetSource(type, name)` | Same, + granular tools | `SAP(action, target, params)` |
 | **Documentation** | In tool schemas | In tool schemas | `SAP(action="help")` |
@@ -717,8 +719,8 @@ graph LR
 
 ```bash
 vsp --mode hyperfocused  # recommended — single SAP(action, target, params) tool
-vsp --mode focused       # 100 curated tools (individual tool names)
-vsp --mode expert        # all 147 tools individually
+vsp --mode focused       # 106 curated tools (individual tool names)
+vsp --mode expert        # all 157 tools individually
 ```
 
 ## DSL & Automation
@@ -917,7 +919,7 @@ vsp enables AI assistants to investigate production issues autonomously:
 User: "Investigate the ZERODIVIDE crash in production"
 
 AI Workflow:
-  1. GetDumps      → Find recent crashes by exception type
+  1. ListDumps     → Find recent crashes by exception type
   2. GetDump       → Analyze stack trace and variable values
   3. GetSource     → Read code at crash location
   4. GetCallGraph  → Trace call hierarchy
@@ -934,7 +936,7 @@ See [AI-Powered RCA Workflows](reports/2025-12-05-013-ai-powered-rca-workflows.m
 
 ## Tools Reference
 
-**Focused Mode Tools (100):**
+**Focused Mode Tools (103 whitelisted, + 3 always-on system tools):**
 - **Search:** SearchObject, GrepObjects, GrepPackages
 - **Read:** GetSource, GetTable, GetTableContents, RunQuery, GetPackage, GetFunctionGroup, GetCDSDependencies
 - **Debugger:** DebuggerListen, DebuggerAttach, DebuggerDetach, DebuggerStep, DebuggerGetStack, DebuggerGetVariables
@@ -943,12 +945,12 @@ See [AI-Powered RCA Workflows](reports/2025-12-05-013-ai-powered-rca-workflows.m
 - **Dev:** SyntaxCheck, RunUnitTests, RunATCCheck, LockObject, UnlockObject
 - **Intelligence:** FindDefinition, FindReferences, GetContext
 - **System:** GetSystemInfo, GetInstalledComponents, GetCallGraph, GetObjectStructure, GetFeatures
-- **Diagnostics:** GetDumps, GetDump, ListTraces, GetTrace, GetSQLTraceState, ListSQLTraces
+- **Diagnostics:** ListDumps, GetDump, ListTraces, GetTrace, GetSQLTraceState, ListSQLTraces
 - **Git:** GitTypes, GitExport (requires abapGit on SAP)
 - **Reports:** RunReport, GetVariants, GetTextElements, SetTextElements
 - **Install:** InstallZADTVSP, InstallAbapGit, ListDependencies
 
-See [README_TOOLS.md](README_TOOLS.md) for complete tool documentation (147 tools).
+See [README_TOOLS.md](README_TOOLS.md) for complete tool documentation (157 tools).
 
 <details>
 <summary><strong>Capability Matrix</strong></summary>
@@ -973,7 +975,7 @@ See [README_TOOLS.md](README_TOOLS.md) for complete tool documentation (147 tool
 | RAP OData (DDLS/SRVD/SRVB) | Y | - | **Y** |
 | OData Service Publish | Y | - | **Y** |
 | abapGit Export | Y | - | **Y** (WebSocket) |
-| Debugging | Y | Y | N |
+| Debugging | Y | Y | **Y** (via ZADT_VSP; AMDP experimental) |
 
 </details>
 
@@ -984,9 +986,9 @@ See [README_TOOLS.md](README_TOOLS.md) for complete tool documentation (147 tool
 | [abap-adt-api](https://github.com/marcellourbani/abap-adt-api) | Marcello Urbani | TypeScript ADT library, definitive API reference |
 | [mcp-abap-adt](https://github.com/mario-andreschak/mcp-abap-adt) | Mario Andreschak | First MCP server for ABAP ADT |
 
-**vsp** is a Go rewrite with:
+**vsp** is a native Go implementation:
 - Single binary, zero dependencies
-- 147 tools (vs 13 original)
+- 157 tools
 - ~50x faster startup
 
 ## Optional: WebSocket Handler (ZADT_VSP)
@@ -1021,7 +1023,7 @@ See [WebSocket Handler Report](reports/2025-12-18-002-websocket-rfc-handler.md) 
 | Document | Description |
 |----------|-------------|
 | [docs/architecture.md](docs/architecture.md) | Architecture diagrams (Mermaid) |
-| [README_TOOLS.md](README_TOOLS.md) | Complete tool reference (94 tools) |
+| [README_TOOLS.md](README_TOOLS.md) | Complete tool reference (157 tools) |
 | [MCP_USAGE.md](MCP_USAGE.md) | AI agent usage guide |
 | [docs/DSL.md](docs/DSL.md) | DSL & workflow documentation |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Technical architecture (detailed) |
@@ -1053,7 +1055,7 @@ make build          # Current platform
 make build-all      # All 9 platforms
 
 # Test
-go test ./...                              # Unit tests (821)
+go test ./...                              # Unit tests (836)
 go test -tags=integration -v ./pkg/adt/    # Integration tests (34+)
 ```
 
@@ -1070,7 +1072,7 @@ vibing-steampunk/
 │   ├── codeintel.go          # Definition, refs, completion
 │   ├── workflows.go          # High-level workflows
 │   └── http.go               # HTTP transport (CSRF, auth)
-├── internal/mcp/server.go    # MCP tool handlers (147 tools)
+├── internal/mcp/server.go    # MCP tool handlers (157 tools)
 ├── internal/lsp/             # ABAP LSP server (diagnostics, go-to-def)
 └── pkg/dsl/                  # DSL & workflow engine
 ```
@@ -1081,8 +1083,8 @@ vibing-steampunk/
 
 | Metric | Value |
 |--------|-------|
-| **Tools** | 147 (100 focused, 147 expert) |
-| **Unit Tests** | 821 |
+| **Tools** | 157 expert · 106 focused · 1 universal (hyperfocused, default) |
+| **Unit Tests** | 836 |
 | **Platforms** | 9 (Linux, macOS, Windows × amd64/arm64/386) |
 
 <details>
@@ -1095,7 +1097,7 @@ vibing-steampunk/
 - [x] ExecuteABAP (code injection via unit tests)
 - [x] System Info & Components (`GetSystemInfo`, `GetInstalledComponents`)
 - [x] Call Graph & Object Structure (`GetCallGraph`, `GetObjectStructure`)
-- [x] Short Dumps / Runtime Errors - `GetDumps`, `GetDump` (RABAX)
+- [x] Short Dumps / Runtime Errors - `ListDumps`, `GetDump` (RABAX)
 - [x] ABAP Profiler / Traces - `ListTraces`, `GetTrace` (ATRA)
 - [x] SQL Trace - `GetSQLTraceState`, `ListSQLTraces` (ST05)
 - [x] **RAP OData E2E** - DDLS, SRVD, SRVB create + publish (v2.6.0)
