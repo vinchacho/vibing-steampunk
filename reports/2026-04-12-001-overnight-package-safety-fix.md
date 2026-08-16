@@ -89,8 +89,8 @@ workflow additions from silently bypassing the guard.
 After Phase 1 landed, Alice asked for a single unified gate instead of
 scattered per-function checks:
 
-> "давайте сделайте всё через один auth/filter gate - потому что у нас
-> гейты есть по CRUD, по TR (по CR!) по пакетам"
+> "let's route everything through one auth/filter gate — because we have
+> gates for CRUD, for TR (for CR!), for packages" *(translated)*
 
 Phase 2 consolidates all three policy dimensions behind one entry point.
 
@@ -189,7 +189,7 @@ resolver is implemented. Recommended approach (from Codex's audit):
 - **23:45** — Codex review approved Phase 1, no blockers
 - **23:50** — Phase 1 committed (`08e3d78`), pushed, PR #101 created
 - **23:55** — Graceful handover
-- **next day** — Alice requested unified gate ("один auth/filter gate")
+- **next day** — Alice requested unified gate ("one auth/filter gate")
 - **next day** — Phase 2 implemented: `checkMutation`, 15 mutators
   migrated, UI5 fail-closed, 10 new tests; Codex reviewed and approved
 - **next day** — Phase 2 committed (`c3a5341`), pushed

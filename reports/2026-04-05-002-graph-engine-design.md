@@ -9,87 +9,87 @@
 
 ## 1. Motivation
 
-ZXRAY на SAP делает:
-1. Строит граф зависимостей через CROSS/WBCROSSGT
-2. Кластеризует объекты по пакетам
-3. Находит пересечения границ пакетов
-4. Генерирует документацию через LLM
+ZXRAY on SAP does the following:
+1. Builds a dependency graph via CROSS/WBCROSSGT
+2. Clusters objects by package
+3. Finds package boundary crossings
+4. Generates documentation via LLM
 
-Проблема: ZXRAY привязан к SAP runtime. Перенос в vsp (Go-native) даёт:
-- Работу без SAP GUI
-- Интеграцию с AI-агентами через MCP
-- Кеширование между вызовами
-- Offline-анализ (после первичного сбора)
+Problem: ZXRAY is tied to the SAP runtime. Porting it to vsp (Go-native) gives:
+- Operation without SAP GUI
+- Integration with AI agents via MCP
+- Caching between calls
+- Offline analysis (after the initial collection)
 
 ---
 
-## 2. Ключевые Use Cases
+## 2. Key Use Cases
 
-### 2.1 Package Boundary Analysis (приоритет!)
+### 2.1 Package Boundary Analysis (priority!)
 
-**Вопрос:** "Пересекает ли разработка PROG границы пакета? Или упирается только в Стандарт?"
+**Question:** "Does the PROG development cross package boundaries? Or does it only run into the SAP Standard?" *(translated)*
 
 ```
-Входные данные:
-  - Объект: ZPROG или пакет $ZDEV
-  - Whitelist: ["$ZCOMMON", "$ZUTILS", "Z*_SHARED"]  (разрешённые Z-пакеты)
+Input data:
+  - Object: ZPROG or package $ZDEV
+  - Whitelist: ["$ZCOMMON", "$ZUTILS", "Z*_SHARED"]  (allowed Z-packages)
 
-Анализ:
-  1. Собрать все зависимости через CROSS/WBCROSSGT
-  2. Для каждой зависимости определить пакет через TADIR
-  3. Классифицировать:
-     - STANDARD: зависимость на SAP-стандарт (не Z*) → ОК
-     - SAME_PKG: зависимость внутри своего пакета → ОК
-     - ALLOWED: зависимость на whitelist Z-пакет → ОК
-     - VIOLATION: зависимость на чужой Z-пакет → ПРОБЛЕМА
+Analysis:
+  1. Collect all dependencies via CROSS/WBCROSSGT
+  2. For each dependency, determine its package via TADIR
+  3. Classify:
+     - STANDARD: dependency on SAP standard (not Z*) → OK
+     - SAME_PKG: dependency within its own package → OK
+     - ALLOWED: dependency on a whitelisted Z-package → OK
+     - VIOLATION: dependency on a foreign Z-package → PROBLEM
 
-Результат:
+Result:
   ZDEV_MAIN_REPORT ($ZDEV):
     ✓ STANDARD: CL_GUI_ALV_GRID, BAPI_USER_GET_DETAIL
     ✓ SAME_PKG: ZCL_DEV_HELPER, ZDEV_UTILS
     ✓ ALLOWED:  ZCL_COMMON_LOGGER ($ZCOMMON)
-    ✗ VIOLATION: ZCL_HR_PAYROLL ($ZHR) ← пересечение!
-    ✗ VIOLATION: ZSALES_GET_DATA ($ZSALES) ← пересечение!
+    ✗ VIOLATION: ZCL_HR_PAYROLL ($ZHR) ← boundary crossing!
+    ✗ VIOLATION: ZSALES_GET_DATA ($ZSALES) ← boundary crossing!
 ```
 
 ### 2.2 Impact Analysis
 
-**Вопрос:** "Что сломается если я изменю ZCL_FOO?"
+**Question:** "What breaks if I change ZCL_FOO?" *(translated)*
 
 ```
 BuildGraph(ZCL_FOO, direction=UP, depth=3)
-→ Все объекты, которые прямо или транзитивно зависят от ZCL_FOO
-→ Группировка по пакетам, по критичности
+→ All objects that directly or transitively depend on ZCL_FOO
+→ Grouping by package, by criticality
 ```
 
 ### 2.3 Dependency Depth
 
-**Вопрос:** "Насколько глубоко зарыта эта программа?"
+**Question:** "How deeply buried is this program?" *(translated)*
 
 ```
 BuildGraph(ZPROG, direction=DOWN, depth=5)
-→ Дерево зависимостей с уровнями
-→ "Корневые" объекты (ни от чего не зависят)
-→ "Листья" (от них никто не зависит)
+→ Dependency tree with levels
+→ "Root" objects (depend on nothing)
+→ "Leaves" (nothing depends on them)
 ```
 
 ### 2.4 Cluster Detection
 
-**Вопрос:** "Какие объекты образуют связные группы?"
+**Question:** "Which objects form connected groups?" *(translated)*
 
 ```
 BuildGraph($ZPACKAGE, direction=BOTH, depth=2)
-→ Connected components = логические модули
-→ Объекты-мосты (связывают кластеры) = точки сильной связности
+→ Connected components = logical modules
+→ Bridge objects (linking clusters) = points of strong coupling
 ```
 
 ---
 
-## 3. Data Sources (SQL через ADT)
+## 3. Data Sources (SQL via ADT)
 
-### 3.1 CROSS — классические перекрёстные ссылки
+### 3.1 CROSS — classic cross-references
 
-| TYPE | Что | Пример |
+| TYPE | What | Example |
 |------|-----|--------|
 | F | Function Module call | `CALL FUNCTION 'Z_FM'` |
 | R | Report/Program call | `SUBMIT ZPROG` |
@@ -104,9 +104,9 @@ SELECT type, name, include FROM cross
 WHERE include = 'ZPROG'
 ```
 
-### 3.2 WBCROSSGT — global type перекрёстные ссылки
+### 3.2 WBCROSSGT — global type cross-references
 
-| OTYPE | Что | Пример |
+| OTYPE | What | Example |
 |-------|-----|--------|
 | ME | Method call | `ZCL_FOO=>METHOD()` |
 | TY | Type usage | `TYPE REF TO ZCL_FOO` |
@@ -121,18 +121,18 @@ WHERE include = 'ZCL_FOO========CP'
 
 ### 3.3 D010INC — Static Load Dependencies (NEW!)
 
-**Что:** Какие includes загружает программа при компиляции. Это **реальный граф загрузки**, не только вызовы.
+**What:** Which includes a program loads at compile time. This is the **real load graph**, not just calls.
 
 ```sql
 SELECT master, include FROM d010inc WHERE master = 'ZABAPGIT'
 ```
 
-**Результат (A4H live):** ZABAPGIT загружает 50+ includes:
+**Result (A4H live):** ZABAPGIT loads 50+ includes:
 - `CX_SALV_*=====CT` — class test includes
 - `CX_SHM_*======CU` — class public sections
 - `CX_SFW_*======CU` — switch framework classes
 
-**Суффиксы include-имён:**
+**Include-name suffixes:**
 | Suffix | Meaning |
 |--------|---------|
 | `CP` | Class Pool (main) |
@@ -143,14 +143,14 @@ SELECT master, include FROM d010inc WHERE master = 'ZABAPGIT'
 | `CM` | Class Method include |
 | `FP` | Function Pool |
 
-**Ценность для graph engine:**
-- CROSS/WBCROSSGT показывают **что вызывается** (runtime deps)
-- D010INC показывает **что загружается** (compile-time deps)
-- Разница важна: программа может загружать class pool для TYPE определения, но не вызывать ни один метод
+**Value for the graph engine:**
+- CROSS/WBCROSSGT show **what is called** (runtime deps)
+- D010INC shows **what is loaded** (compile-time deps)
+- The difference matters: a program can load a class pool for a TYPE definition without calling a single method
 
-**Стандартный отчёт:** `RSINCL00` — "ABAP Program Reference List" — SAP GUI визуализация D010INC.
+**Standard report:** `RSINCL00` — "ABAP Program Reference List" — SAP GUI visualization of D010INC.
 
-**Edge type:** `RefType: "LOAD"` — compile-time dependency, дополняет F/R/ME/TY из CROSS/WBCROSSGT.
+**Edge type:** `RefType: "LOAD"` — compile-time dependency, complements F/R/ME/TY from CROSS/WBCROSSGT.
 
 ### 3.4 TADIR — Object ↔ Package mapping
 
@@ -161,11 +161,11 @@ WHERE pgmid = 'R3TR' AND obj_name = 'ZCL_FOO'
 
 ### 3.4 Verified on A4H 758
 
-Live test выполнен 2026-04-05:
-- CROSS: `ZADT_WASM_TEST` → `SSFC_BASE64_DECODE` (F, стандарт) ✓
+Live test performed on 2026-04-05:
+- CROSS: `ZADT_WASM_TEST` → `SSFC_BASE64_DECODE` (F, standard) ✓
 - WBCROSSGT: `ZABAPGIT` → 50+ method/data refs ✓
-- TADIR: Объекты в `$TMP`, `$Z`, `$ZGIT`, `$DEMO_SOI_DRAFT` ✓
-- JOIN cross+tadir для package resolution ✓
+- TADIR: Objects in `$TMP`, `$Z`, `$ZGIT`, `$DEMO_SOI_DRAFT` ✓
+- JOIN cross+tadir for package resolution ✓
 
 ---
 
@@ -409,7 +409,7 @@ Key insight: ADT APIs already implemented. We're building a **graph layer on top
 ### 7.1 MCP Tool Interface
 
 ```
-# Полный анализ пакета на пересечение границ
+# Full package analysis for boundary crossings
 SAP(action="analyze", params={
     "type": "check_boundaries",
     "package": "$ZDEV",
@@ -419,7 +419,7 @@ SAP(action="analyze", params={
 })
 ```
 
-### 7.2 Пример вывода — Package Boundary Report
+### 7.2 Example Output — Package Boundary Report
 
 ```
 ╔══════════════════════════════════════════════════════════════╗
@@ -486,7 +486,7 @@ SAP(action="analyze", params={
 
 ### 7.3 ADT API Calls Behind the Scenes
 
-Для одного `check_boundaries($ZDEV)` graph engine выполняет:
+For a single `check_boundaries($ZDEV)`, the graph engine performs:
 
 ```
 Step 1: List package objects

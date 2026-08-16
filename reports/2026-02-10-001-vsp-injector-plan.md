@@ -9,7 +9,7 @@
 
 ## 1. The Vision
 
-> "Приоткрыли тебе дверь через ADT - а ты туда ногу просунул и уже внутрь весь просочился и как дома - хоп!"
+> "We opened the door a crack for you via ADT — and you got a foot in, slipped all the way inside, and made yourself at home!" *(translated)*
 
 **Translation:** "They cracked the door open via ADT - you put your foot in, and then you're inside like at home - hop!"
 
