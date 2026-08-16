@@ -415,7 +415,7 @@ VSP works with **8 CLI coding agents** — not just Claude! Full setup guides wi
 
 Availability, pricing, and model lineups change quickly. Check the linked agent guides and official product docs before copying limits or plan claims into downstream docs.
 
-**[Full setup guide with config examples](docs/cli-agents/README.md)** | [Русский](docs/cli-agents/README_RU.md) | [Українська](docs/cli-agents/README_UA.md) | [Español](docs/cli-agents/README_ES.md)
+**[Full setup guide with config examples](docs/cli-agents/README.md)**
 
 For the new graph analysis capabilities, see **[Graph Guide](docs/graph-guide.md)**.
 
@@ -1029,7 +1029,7 @@ See [WebSocket Handler Report](reports/2025-12-18-002-websocket-rfc-handler.md) 
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Technical architecture (detailed) |
 | [CLAUDE.md](CLAUDE.md) | AI development guidelines |
 | [embedded/abap/README.md](embedded/abap/README.md) | WebSocket handler deployment |
-| [docs/cli-agents/](docs/cli-agents/README.md) | CLI coding agents setup guide (8 agents, 4 languages) |
+| [docs/cli-agents/](docs/cli-agents/README.md) | CLI coding agents setup guide (8 agents) |
 | [Roadmap: Quick/Mid/Far Wins](reports/2026-01-02-005-roadmap-quick-mid-far-wins.md) | Prioritized feature backlog |
 | [Observations Since v2.12.5](reports/2025-12-22-observations-since-v2.12.5.md) | Recent changes & research summary |
 

@@ -152,7 +152,7 @@ embedded/
 ├── abap/                 # ABAP sources installed on SAP (ZADT_VSP service, debug, git, AMDP, reports, RFC)
 └── deps/                 # Embedded abapGit dependency ZIPs
 
-docs/                     # Architecture, ADRs, cli-agents guides (4 langs), reviewer guide
+docs/                     # Architecture, ADRs, cli-agents guides, reviewer guide
 contexts/                 # Session handoff notes (chronological)
 reports/                  # Research / design / status reports (YYYY-MM-DD-NNN-title.md)
 articles/                 # Published articles (upstream author content — do not rewrite oisee URLs)

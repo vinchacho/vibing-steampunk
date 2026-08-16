@@ -4,8 +4,6 @@ Guide for setting up CLI coding assistants to work with SAP via [VSP (vibing-ste
 
 **VSP** is an MCP server that gives AI assistants access to SAP ADT API: read/write code, debug, test, transports, and more.
 
-**Translations:** [Русский](README_RU.md) | [Українська](README_UA.md) | [Español](README_ES.md)
-
 ---
 
 ## Summary Table

@@ -229,13 +229,13 @@ Combine WebSocket debugging with MCP tools for powerful RCA:
 ┌─────────────────────────────────────────────────────────────┐
 │                    RCA Workflow                              │
 │                                                              │
-│  1. GetDumps ──────► Find runtime error in ST22              │
+│  1. ListDumps ──────► Find runtime error in ST22              │
 │         │                                                    │
 │  2. GetDump ───────► Analyze stack trace, find failure point │
 │         │                                                    │
 │  3. GetSource ─────► Read code at failure location           │
 │         │                                                    │
-│  4. SetExternalBreakpoint ──► Set BP before failure          │
+│  4. SetBreakpoint ──► Set BP before failure          │
 │         │                                                    │
 │  5. RunUnitTests ──► Trigger reproduction                    │
 │         │                                                    │
@@ -249,14 +249,14 @@ Combine WebSocket debugging with MCP tools for powerful RCA:
 
 ```bash
 # Step 1: Find the dump
-vsp GetDumps --exception_type CX_SY_ZERODIVIDE --user DEVELOPER
+vsp ListDumps --exception_type CX_SY_ZERODIVIDE --user DEVELOPER
 
 # Step 2: Get details
 vsp GetDump --dump_id "20251219/143052/DEVELOPER"
 # Shows: ZCL_INVOICE_CALC, line 127, method CALCULATE_DISCOUNT
 
 # Step 3: Set breakpoint
-vsp SetExternalBreakpoint --kind line \
+vsp SetBreakpoint --kind line \
     --object_uri "/sap/bc/adt/oo/classes/zcl_invoice_calc/source/main" \
     --line 126 --user DEVELOPER
 
@@ -278,7 +278,7 @@ Debug RAP behavior implementations by:
 
 ```json
 // Set breakpoint in RAP handler
-vsp SetExternalBreakpoint --kind line \
+vsp SetBreakpoint --kind line \
     --object_uri "/sap/bc/adt/oo/classes/zcl_bp_i_salesorder/source/main" \
     --line 45 --user DEVELOPER
 
@@ -397,7 +397,7 @@ With ZADT_VSP + TPDAPI:
 │                                                                              │
 │  PHASE 1: DISCOVERY                                                          │
 │  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐                   │
-│  │  GetDumps    │───►│   GetDump    │───►│  GetSource   │                   │
+│  │  ListDumps    │───►│   GetDump    │───►│  GetSource   │                   │
 │  │  (ST22)      │    │  (Details)   │    │  (Code)      │                   │
 │  └──────────────┘    └──────────────┘    └──────────────┘                   │
 │         │                   │                   │                            │
@@ -438,7 +438,7 @@ With ZADT_VSP + TPDAPI:
 
 ```javascript
 // 1. AI finds recent dumps
-const dumps = await mcp.GetDumps({ user: "BATCH_USER", max_results: 5 });
+const dumps = await mcp.ListDumps({ user: "BATCH_USER", max_results: 5 });
 // Found: CX_SY_ZERODIVIDE in ZCL_INVOICE_CALC
 
 // 2. AI analyzes dump details
