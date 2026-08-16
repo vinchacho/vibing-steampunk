@@ -200,7 +200,3 @@ ZCL_DEMO_UTILS  (CLAS)
 - "Method-level dead code inside the USED classes?" → `vsp slim '<package>' --level methods`
 - "Ready to delete the UNUSED set?" → **abap-developer**, one transport, after business sign-off — this skill won't do it
 - "Park the audit for the next session?" → **handoff**
-
----
-
-Adapted from [arc-mcp/arc-1](https://github.com/arc-mcp/arc-1) `sap-unused-code` (MIT).

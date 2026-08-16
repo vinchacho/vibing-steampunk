@@ -151,7 +151,3 @@ Then run **RunATCCheck** on the package (confirm variant/check availability with
 2. Replace the ABAP Unit skeleton asserts with real behavior tests (CDS test doubles).
 3. <any ✗ / not-verified rows, DDLX or access-control follow-ups in ADT>
 ```
-
----
-
-Adapted from [matt1as/claude-abap-skills](https://github.com/matt1as/claude-abap-skills) (Apache-2.0).

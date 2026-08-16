@@ -83,5 +83,3 @@ Prefix each line of the report (see Output Format above) with its verdict, and a
 An auth-probe FAIL is a finding about *this user's* authorizations, not about the system: say so explicitly, so the user takes the report to their security team rather than to Basis.
 
 ---
-
-Layered check ordering, gating rule, and skip-rationale reporting adapted from [babamba2/superclaude-for-sap](https://github.com/babamba2/superclaude-for-sap) (MIT).

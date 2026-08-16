@@ -7,7 +7,7 @@ Checks every plugin/skills/*/SKILL.md for:
 - local markdown links that resolve on disk (anchors stripped, URL-decoded,
   scheme-prefixed targets skipped)
 
-Adapted from validate_skills.py in https://github.com/likweitan/abap-skills
+Third-party notices: see NOTICE.md at the repository root.
 (MIT License, Copyright (c) 2026 Lik Wei).
 """
 
@@ -18,19 +18,16 @@ import sys
 from pathlib import Path
 from urllib.parse import unquote
 
-
 ROOT = Path(__file__).resolve().parents[1]
 SKILLS_DIR = ROOT / "plugin" / "skills"
 FRONTMATTER_PATTERN = re.compile(r"\A---\n(.*?)\n---(?:\n|\Z)", re.DOTALL)
 MARKDOWN_LINK_PATTERN = re.compile(r"(?<!!)\[[^]]*]\(([^)]+)\)")
-
 
 def frontmatter_value(frontmatter: str, key: str) -> str | None:
     match = re.search(rf"^{re.escape(key)}:\s*(.+)$", frontmatter, re.MULTILINE)
     if not match:
         return None
     return match.group(1).strip().strip("\"'")
-
 
 def validate_skill(skill_file: Path) -> list[str]:
     errors: list[str] = []
@@ -70,7 +67,6 @@ def validate_skill(skill_file: Path) -> list[str]:
 
     return errors
 
-
 def main() -> int:
     skill_files = sorted(SKILLS_DIR.glob("*/SKILL.md"))
     if not skill_files:
@@ -88,7 +84,6 @@ def main() -> int:
 
     print(f"Validated {len(skill_files)} skill manifests.")
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

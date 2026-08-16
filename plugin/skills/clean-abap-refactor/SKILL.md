@@ -159,7 +159,3 @@ in a style refactor.
 ## Confirmation
 Write these changes back to <OBJECT NAME>? (yes / no / per-method)
 ```
-
----
-
-Adapted from [matt1as/claude-abap-skills](https://github.com/matt1as/claude-abap-skills) (Apache-2.0).

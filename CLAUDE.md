@@ -26,7 +26,7 @@ Roadmap and rationale: [reports/2026-07-11-001-improvement-plan-and-landscape.md
 ### 1. Quality foundation
 - Routing tests for `internal/mcp/handlers_universal.go` (default mode is effectively untested — only `server_test.go` exists in `internal/mcp`)
 - Safe-by-default decision: `internal/mcp/server.go` defaults to `adt.UnrestrictedSafetyConfig()`; unused safe default at `pkg/adt/safety.go` (stderr warning ships now; flipping is a breaking change)
-- ~~Cherry-pick candidates #125/#120/#126~~ superseded: upstream PR #156 (safety/session audit) and #150 (ActivateMultiple) cherry-picked 2026-08-15 — see [reports/2026-08-15-001-sap-mcp-skills-landscape-and-borrow-roadmap.md](reports/2026-08-15-001-sap-mcp-skills-landscape-and-borrow-roadmap.md); re-triage #108/#145/#152, pick up #148/#153/#154
+- ~~Cherry-pick candidates #125/#120/#126~~ superseded: upstream PR #156 (safety/session audit) and #150 (ActivateMultiple) cherry-picked 2026-08-15 — see [reports/2026-08-15-001-sap-mcp-skills-landscape-and-roadmap.md](reports/2026-08-15-001-sap-mcp-skills-landscape-and-roadmap.md); re-triage #108/#145/#152, pick up #148/#153/#154
 
 ### 2. Graph Engine (`pkg/graph/`) — In Progress
 - Done: core types, parser dep extraction, boundary analyzer, SQL/transport/config builders (`builder_sql.go`, `builder_transport.go`, `builder_config.go` — all tested), queries (slim/health/rename/impact/api-surface/transport_boundaries)

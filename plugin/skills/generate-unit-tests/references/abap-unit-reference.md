@@ -255,7 +255,3 @@ ENDCLASS.
 - [SAP ABAP Cheat Sheets — ABAP Unit Tests](https://github.com/SAP-samples/abap-cheat-sheets/blob/main/14_ABAP_Unit_Tests.md)
 - [SAP Help — CDS Test Double Framework](https://help.sap.com/docs/abap-cloud/abap-development-tools-user-guide/cds-test-double-framework)
 - [Clean ABAP — Testing](https://github.com/SAP/styleguides/blob/main/clean-abap/CleanABAP.md#testing)
-
----
-
-Adapted from [likweitan/abap-skills](https://github.com/likweitan/abap-skills) `abap-unit-testing` (MIT) and [arc-mcp/arc-1](https://github.com/arc-mcp/arc-1) `generate-abap-unit-test` (MIT). Identifiers replaced with synthetic `ZDEMO_*` names.

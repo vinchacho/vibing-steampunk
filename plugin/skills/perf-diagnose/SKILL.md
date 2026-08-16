@@ -215,7 +215,3 @@ Deliver a tight diagnosis, not a tool log:
 - **rca** — widen to a full incident workflow (timeline, transports, dump correlation) when "slow" turns out to be "broken since <transport>".
 - **abap-architect** — impact analysis before a fix that restructures a shared CDS stack.
 - **atc-remediation** — work down the findings list when the static pass surfaced more than the one statement.
-
----
-
-Adapted from [arc-mcp/arc-1](https://github.com/arc-mcp/arc-1) `debug-slow-sql` (MIT).

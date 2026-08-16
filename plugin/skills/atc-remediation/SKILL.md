@@ -96,7 +96,3 @@ Baseline: <N> findings (P1: n / P2: n / P3: n) across <M> objects
 ## Suppressions (empty unless the user requested any)
 | Check name | Line | User justification |
 ```
-
----
-
-Adapted from [matt1as/claude-abap-skills](https://github.com/matt1as/claude-abap-skills) (Apache-2.0).

@@ -138,7 +138,3 @@ Failure loop (max 3 iterations): classify each failure as *mock setup*, *test da
 - **clean-abap-review** — review the class (and the new tests) against the Clean ABAP rule set
 - **abap-developer** — fix genuine CUT defects the tests uncovered
 - **deploy** — full pre-release gate once the package is green
-
----
-
-Adapted from [arc-mcp/arc-1](https://github.com/arc-mcp/arc-1) `generate-abap-unit-test` (MIT), retargeted from ARC-1's SAP* tools to vsp MCP tools. Bundled reference adapted from [likweitan/abap-skills](https://github.com/likweitan/abap-skills) (MIT).

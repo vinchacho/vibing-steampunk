@@ -146,7 +146,3 @@ Write to disk only if asked; otherwise return inline.
 - "Release the ready ones?" → `ReleaseTransport` (irreversible; confirm request number and owner first).
 - "Clean up the empty ones?" → `DeleteTransport` (modifiable requests only; confirm first).
 - "Which packages/boundaries does a request touch?" → `vsp tr-boundaries` / `vsp changes`.
-
----
-
-Adapted from [arc-mcp/arc-1](https://github.com/arc-mcp/arc-1) `sap-transport-overview` (MIT).

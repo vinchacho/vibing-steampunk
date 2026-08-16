@@ -102,7 +102,3 @@ ATC run: <variant name, or "not run — findings unverified">
 - **Do not skip findings to be polite.** A real review names everything; the severity scale handles the noise.
 - **Read-only.** Never call WriteSource, EditSource, Activate, PrettyPrint, or any other mutating tool from this skill — fixes belong to clean-abap-refactor or atc-remediation.
 - **Synthetic identifiers only in examples.** Use `ZDEMO_*` / `ZCL_DEMO_*` / `$ZDEMO` in illustrative snippets; quote the system's real names only when citing the reviewed source itself.
-
----
-
-Adapted from [matt1as/claude-abap-skills](https://github.com/matt1as/claude-abap-skills) (Apache-2.0).

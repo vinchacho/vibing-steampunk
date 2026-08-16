@@ -153,8 +153,4 @@ prerequisite as *unverified* — do not assume the checks are installed.
 | SAP Cloud ERP | https://sap.github.io/abap-atc-cr-cv-s4hc/ |
 | SAP Cloud ERP Private | https://sap.github.io/abap-atc-cr-cv-s4hc/?version=objectReleaseInfo_PCELatest.json |
 | Classic API Clean Core model | https://sap.github.io/abap-atc-cr-cv-s4hc/?version=objectClassifications_SAP.json |
-
----
-
-Adapted from [likweitan/abap-skills](https://github.com/likweitan/abap-skills)
 (MIT), skill `atc-cloudification`. Two-axes rule per SAP Notes 3578329 / 3690029.

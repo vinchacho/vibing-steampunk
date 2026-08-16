@@ -83,5 +83,3 @@ Speculation is forbidden. A root cause is either **supported by evidence in hand
 - A BLOCKED result with a sharp evidence request is a good outcome. A confident-sounding guess is a failure of this skill.
 
 ---
-
-Category framework, evidence-matrix split, and no-speculation rule adapted from [babamba2/superclaude-for-sap](https://github.com/babamba2/superclaude-for-sap) (MIT).

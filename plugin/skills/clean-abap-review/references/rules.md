@@ -804,7 +804,3 @@ define view entity ZDEMO_I_ORDER
 }
 ```
 **ATC**: SAP standard ATC — CDS mandatory annotations
-
----
-
-Adapted from [matt1as/claude-abap-skills](https://github.com/matt1as/claude-abap-skills) (Apache-2.0).

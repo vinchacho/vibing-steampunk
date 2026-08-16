@@ -3,7 +3,7 @@
 **Date:** 2026-08-15
 **Report ID:** 004
 **Subject:** Blast-radius summaries on writes with an opt-in enforcement gate — pointer to the as-built design
-**Related Documents:** [docs/plans/2026-08-15-impact-gated-writes-design.md](../docs/plans/2026-08-15-impact-gated-writes-design.md) (design, as built) · [docs/plans/2026-08-15-impact-gated-writes.md](../docs/plans/2026-08-15-impact-gated-writes.md) (implementation plan) · [2026-08-15-001-sap-mcp-skills-landscape-and-borrow-roadmap.md](2026-08-15-001-sap-mcp-skills-landscape-and-borrow-roadmap.md) · [2026-08-15-003-skill-content-borrow-analysis.md](2026-08-15-003-skill-content-borrow-analysis.md)
+**Related Documents:** [docs/plans/2026-08-15-impact-gated-writes-design.md](../docs/plans/2026-08-15-impact-gated-writes-design.md) (design, as built) · [docs/plans/2026-08-15-impact-gated-writes.md](../docs/plans/2026-08-15-impact-gated-writes.md) (implementation plan) · [2026-08-15-001-sap-mcp-skills-landscape-and-roadmap.md](2026-08-15-001-sap-mcp-skills-landscape-and-roadmap.md) · [2026-08-15-003-plugin-skill-roadmap.md](2026-08-15-003-plugin-skill-roadmap.md)
 
 Shipped on `feature/impact-gated-writes` (2026-08-15). Every risky write
 (update/edit/delete/rename) can return an `impact` block — caller count,

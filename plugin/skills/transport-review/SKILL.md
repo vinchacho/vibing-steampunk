@@ -171,7 +171,3 @@ Return inline by default; write to disk only if the user gave a path.
 - "Is the changed code any good?" → **clean-abap-review** on the changed objects, or **atc-remediation** for the ATC findings.
 - "Who breaks if this CDS changes?" → **abap-architect** (full impact/dependency workflow).
 - "Show me all open transports on the system instead" → **transport-overview** (the breadth twin — switch, don't combine).
-
----
-
-Adapted from [arc-mcp/arc-1](https://github.com/arc-mcp/arc-1) `sap-transport-review` (MIT), rewired to VSP tools.

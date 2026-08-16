@@ -135,7 +135,3 @@ renamed field used in the surrounding code — half a migration is worse than no
 - **Always state the target model** — hard vs soft depends on it, and grading without it is guessing.
 - **Cite the rule name** from the shared rules file in every finding. No finding without a rule — this is a compliance check, not a free-form review.
 - **Point at the direction, don't apply it.** Remediation belongs to **atc-remediation**; pseudo-comment suppression (`"#EC`) is never a remediation here.
-
----
-
-Adapted from [matt1as/claude-abap-skills](https://github.com/matt1as/claude-abap-skills) (Apache-2.0).
