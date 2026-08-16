@@ -115,7 +115,7 @@ flowchart LR
 
 ### 2.8 What Should Be Deleted
 - 🔴 Remove committed sensitive artifacts now:
-  - `/Users/VincentSegami/Documents/GitHub/vibing-steampunk/reports/2025-12-21-007-phase5-live-experiment.md:26` contains a concrete password string.
+  - `/Users/VincentSegami/Documents/GitHub/vibing-steampunk/reports/2025-12-21-007-phase5-live-experiment.md:26` contained a concrete password string (redacted 2026-08-16; credential rotation required since it remains in public git history).
   - `/Users/VincentSegami/Documents/GitHub/vibing-steampunk/amdp-breakpoint-test-results-20251206-084536.log:5` exposes system/user metadata.
 - 🟡 Remove duplicate ABAP source trees and define one source-of-truth (`embedded/abap`, `src`, `abap/src/zadt_vsp`).
 - 🟡 Delete or archive stale speculative reports that no longer match code reality; retain ADR-style docs instead.
