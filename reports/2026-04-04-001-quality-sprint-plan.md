@@ -95,7 +95,7 @@
 
 ## New Feature: ADT Capability Discovery
 
-**Triggered by:** User feedback from Birzhan + Александр Гаращенко (2026-04-04 chat)
+**Triggered by:** User feedback from Birzhan + Alexander G. (2026-04-04 chat)
 
 **Problem:** Different SAP versions expose different ADT endpoints. `vsp query` fails silently on systems without `/sap/bc/adt/datapreview/freestyle`. Users see cryptic errors.
 

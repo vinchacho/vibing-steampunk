@@ -21,7 +21,7 @@
 
 ### ADT Version Differences Are Real
 - Birzhan: `vsp query` works on new system, fails on old
-- Александр: "у меня нет GetTable и GetStructure"
+- Alexander: "I don't have GetTable and GetStructure" *(translated)*
 - `/sap/bc/adt` is ONE node in SICF — if search works, the service is active
 - Individual endpoints like `datapreview/freestyle` may not exist on older releases
 - Need: `vsp probe` capability discovery command

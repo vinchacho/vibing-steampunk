@@ -51,7 +51,7 @@
 ### Track A: Continue Stability (2-3h)
 
 1. **ADT Capability Probe** (`vsp probe`) — test all endpoints, report availability
-   - Triggered by user feedback (Birzhan, Александр)
+   - Triggered by user feedback (Birzhan, Alexander)
    - Critical for systems with incomplete ADT support
    - Design: probe key endpoints on first connect, cache results, add `vsp probe` CLI command
 

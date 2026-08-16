@@ -207,13 +207,13 @@ Opcodes defined:
   Funcs:    MAKE_FUNC, CALL, RETURN, RETURN_UNDEF
   Objects:  MAKE_OBJ, MAKE_ARR, GET_PROP, SET_PROP, GET_IDX, SET_IDX
   Classes:  NEW
-  Native:   NATIVE (готовченки — direct ABAP ops for str/arr built-ins)
+  Native:   NATIVE ("ready-mades" — direct ABAP ops for str/arr built-ins)
   Misc:     TYPEOF, DUP, PUSH_THIS
 ```
 
 Design principles:
-- **"Шитый код"** (threaded code): integer opcode dispatch via ABAP CASE
-- **"Готовченки"** (NATIVE ops): str.charAt, arr.push → direct ABAP, no JS function call overhead
+- **Threaded code**: integer opcode dispatch via ABAP CASE
+- **"Ready-mades"** (NATIVE ops): str.charAt, arr.push → direct ABAP, no JS function call overhead
 - Flat instruction array, sequential IP
 - Typed value stack (not byte array — ABAP native types)
 - Explicit call frames with captured env (closures)
